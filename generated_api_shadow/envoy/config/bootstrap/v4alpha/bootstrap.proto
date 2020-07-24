@@ -308,6 +308,25 @@ message ClusterManager {
 message Watchdog {
   option (udpa.annotations.versioning).previous_message_type = "envoy.config.bootstrap.v3.Watchdog";
 
+  message WatchdogAction {
+    option (udpa.annotations.versioning).previous_message_type =
+        "envoy.config.bootstrap.v3.Watchdog.WatchdogAction";
+
+    // In priority events are fired from KILL, MULTIKILL, MEGAMISS and MISS.
+    enum WatchdogEvent {
+      UNKNOWN = 0;
+      KILL = 1;
+      MULTIKILL = 2;
+      MEGAMISS = 3;
+      MISS = 4;
+    }
+
+    // Extension specific configuration for the action.
+    core.v4alpha.TypedExtensionConfig config = 1;
+
+    WatchdogEvent event = 2;
+  }
+
   // The duration after which Envoy counts a nonresponsive thread in the
   // *watchdog_miss* statistic. If not specified the default is 200ms.
   google.protobuf.Duration miss_timeout = 1;
