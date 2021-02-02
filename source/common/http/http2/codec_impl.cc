@@ -1398,7 +1398,6 @@ ConnectionImpl::ClientHttp2Options::ClientHttp2Options(
 
 void ConnectionImpl::dumpState(std::ostream& os, int indent_level) const {
   const char* spaces = spacesForLevel(indent_level);
-  // Dump all bools and const to provide context.
   os << spaces << "Http2::ConnectionImpl " << this << DUMP_MEMBER(max_headers_kb_)
      << DUMP_MEMBER(max_headers_count_) << DUMP_MEMBER(per_stream_buffer_limit_)
      << DUMP_MEMBER(allow_metadata_) << DUMP_MEMBER(stream_error_on_invalid_http_messaging_)
@@ -1409,14 +1408,14 @@ void ConnectionImpl::dumpState(std::ostream& os, int indent_level) const {
   // Dump the protocol constraints
   DUMP_DETAILS(&protocol_constraints_);
 
-  os << "Number of active streams: " << active_streams_.size() << " Active Streams:\n";
+  os << spaces << "Number of active streams: " << active_streams_.size() << " Active Streams:\n";
   std::for_each_n(active_streams_.begin(), std::min<size_t>(active_streams_.size(), 100),
                   [&](auto& stream) { DUMP_DETAILS(stream); });
 
   // Dump the active slice
   if (current_slice_ == nullptr) {
     // No current slice, use macro for consistent formatting.
-    os << DUMP_NULLABLE_MEMBER(current_slice_, "null");
+    os << spaces << "current_slice_: null\n";
   } else {
     auto slice_view =
         absl::string_view(static_cast<const char*>(current_slice_->mem_), current_slice_->len_);
@@ -1436,7 +1435,7 @@ void ConnectionImpl::StreamImpl::dumpState(std::ostream& os, int indent_level) c
      << DUMP_MEMBER(pending_receive_buffer_high_watermark_called_)
      << DUMP_MEMBER(pending_send_buffer_high_watermark_called_)
      << DUMP_MEMBER(reset_due_to_messaging_error_)
-     << DUMP_MEMBER(cookies_, cookies_.getStringView());
+     << DUMP_MEMBER_AS(cookies_, cookies_.getStringView());
 
   DUMP_DETAILS(pending_trailers_to_encode_);
 }

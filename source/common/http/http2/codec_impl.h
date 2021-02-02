@@ -547,6 +547,7 @@ private:
   void onKeepaliveResponse();
   void onKeepaliveResponseTimeout();
 
+  // Tracks the current slice we're processing in the dispatch loop.
   const Buffer::RawSlice* current_slice_ = nullptr;
   bool dispatching_ : 1;
   bool raised_goaway_ : 1;

@@ -33,12 +33,15 @@
 using testing::_;
 using testing::AnyNumber;
 using testing::AtLeast;
+using testing::EndsWith;
 using testing::HasSubstr;
 using testing::InSequence;
 using testing::Invoke;
 using testing::InvokeWithoutArgs;
 using testing::NiceMock;
 using testing::Return;
+using testing::StartsWith;
+using std::string_literals::operator""s;
 
 namespace Envoy {
 namespace Http {
@@ -978,10 +981,31 @@ TEST_P(Http2CodecImplTest, DumpsStreamlessConnectionWithoutAllocatingMemory) {
   server_->dumpState(ostream, 0);
 
   EXPECT_EQ(memory_test.consumedBytes(), 0);
-  // Check contents for protocol constraint, no active streams or slice.
-  EXPECT_THAT(ostream.contents(), HasSubstr("protocol_constraints_: \n  ProtocolConstraints"));
-  EXPECT_THAT(ostream.contents(), HasSubstr("Number of active streams: 0 Active Streams:"));
-  EXPECT_THAT(ostream.contents(), HasSubstr("current_slice_: null"));
+  // Check the entire dump to ensure correct formating.
+  // This test might be a little brittle because of this, and hence in the other
+  // dump tests we focus on the particular substring of interest.
+  EXPECT_THAT(ostream.contents(), StartsWith("Http2::ConnectionImpl 0x"));
+  EXPECT_THAT(
+      ostream.contents(),
+      HasSubstr(
+          "max_headers_kb_: 60, max_headers_count_: 100, "
+          "per_stream_buffer_limit_: 268435456, allow_metadata_: 0, "
+          "stream_error_on_invalid_http_messaging_: 0, is_outbound_flood_monitored_control_frame_: "
+          "0, skip_encoding_empty_trailers_: 1, dispatching_: 0, raised_goaway_: 0, "
+          "pending_deferred_reset_: 0\n"
+          "&protocol_constraints_: \n"
+          "  ProtocolConstraints 0x"));
+  EXPECT_THAT(
+      ostream.contents(),
+      EndsWith("outbound_frames_: 0, max_outbound_frames_: 10000, "
+               "outbound_control_frames_: 0, max_outbound_control_frames_: 1000, "
+               "consecutive_inbound_frames_with_empty_payload_: 0, "
+               "max_consecutive_inbound_frames_with_empty_payload_: 1, inbound_streams_: 0, "
+               "inbound_priority_frames_: 0, max_inbound_priority_frames_per_stream_: 100, "
+               "inbound_window_update_frames_: 0, outbound_data_frames_: 0, "
+               "max_inbound_window_update_frames_per_data_frame_sent_: 10\n"
+               "Number of active streams: 0 Active Streams:\n"
+               "current_slice_: null\n"));
 }
 
 TEST_P(Http2CodecImplTest, ShouldDumpActiveStreamsWithoutAllocatingMemory) {
@@ -1015,10 +1039,13 @@ TEST_P(Http2CodecImplTest, ShouldDumpActiveStreamsWithoutAllocatingMemory) {
         HasSubstr(
             "Number of active streams: 1 Active Streams:\nstream: \nConnectionImpl::StreamImpl"));
     EXPECT_THAT(ostream.contents(),
-                HasSubstr("pending_trailers_to_encode_:   null\n  "
-                          "absl::get<RequestHeaderMapPtr>(headers_or_trailers_): \n    ':scheme', "
-                          "'http'\n    ':method', 'GET'\n    ':authority', 'host'\n    ':path', "
-                          "'/'\n, current_slice_: null"));
+                HasSubstr("pending_trailers_to_encode_:   null\n"
+                          "  absl::get<RequestHeaderMapPtr>(headers_or_trailers_): \n"
+                          "    ':scheme', 'http'\n"
+                          "    ':method', 'GET'\n"
+                          "    ':authority', 'host'\n"
+                          "    ':path', '/'\n"
+                          "current_slice_: null"));
   }
 
   // Dump client
@@ -1031,13 +1058,14 @@ TEST_P(Http2CodecImplTest, ShouldDumpActiveStreamsWithoutAllocatingMemory) {
     EXPECT_EQ(memory_test.consumedBytes(), 0);
 
     // Check contents for active stream, trailers to encode and header map.
-    EXPECT_THAT(
-        ostream.contents(),
-        HasSubstr(
-            "Number of active streams: 1 Active Streams:\nstream: \nConnectionImpl::StreamImpl"));
-    EXPECT_THAT(ostream.contents(), HasSubstr("pending_trailers_to_encode_:   null\n  "
-                                              "absl::get<ResponseHeaderMapPtr>(headers_or_trailers_"
-                                              "): \n    ':status', '200'\n, current_slice_: null"));
+    EXPECT_THAT(ostream.contents(), HasSubstr("Number of active streams: 1 Active Streams:\n"
+                                              "stream: \n"
+                                              "ConnectionImpl::StreamImpl"));
+    EXPECT_THAT(ostream.contents(),
+                HasSubstr("pending_trailers_to_encode_:   null\n"
+                          "  absl::get<ResponseHeaderMapPtr>(headers_or_trailers_): \n"
+                          "    ':status', '200'\n"
+                          "current_slice_: null"));
   }
 }
 
@@ -1069,7 +1097,7 @@ TEST_P(Http2CodecImplTest, ShouldDumpCurrentSliceWithoutAllocatingMemory) {
 
   // Check contents for the current slice information
   EXPECT_THAT(ostream.contents(),
-              HasSubstr("current slice length: 20 contents: \"\0\0\\n\0\0\0\0\0\x1hello envoy"));
+              HasSubstr("current slice length: 20 contents: \"\0\0\\v\0\0\0\0\0\x1hello envoy"s));
 }
 
 class Http2CodecImplDeferredResetTest : public Http2CodecImplTest {};
