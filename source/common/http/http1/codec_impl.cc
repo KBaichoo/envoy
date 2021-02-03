@@ -78,7 +78,7 @@ const std::string StreamEncoderImpl::LAST_CHUNK = "0\r\n";
 StreamEncoderImpl::StreamEncoderImpl(ConnectionImpl& connection,
                                      HeaderKeyFormatter* header_key_formatter)
     : connection_(connection), disable_chunk_encoding_(false), chunk_encoding_(true),
-      connect_request_(false), is_response_to_head_request_(false),
+      connect_request_(false), is_tcp_tunneling_(false), is_response_to_head_request_(false),
       is_response_to_connect_request_(false), header_key_formatter_(header_key_formatter) {
   if (connection_.connection().aboveHighWatermark()) {
     runHighWatermarkCallbacks();
@@ -262,8 +262,8 @@ void StreamEncoderImpl::endEncode() {
 
   connection_.flushOutput(true);
   connection_.onEncodeComplete();
-  // With CONNECT, half-closing the connection is used to signal end stream.
-  if (connect_request_) {
+  // With CONNECT or TCP tunneling, half-closing the connection is used to signal end stream.
+  if (connect_request_ || is_tcp_tunneling_) {
     connection_.connection().close(Network::ConnectionCloseType::FlushWriteAndDelay);
   }
 }

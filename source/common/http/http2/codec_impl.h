@@ -367,6 +367,7 @@ protected:
     void encodeTrailers(const RequestTrailerMap& trailers) override {
       encodeTrailersBase(trailers);
     }
+    void enableTcpTunneling() override {}
 
     // ScopeTrackedObject
     void dumpState(std::ostream& os, int indent_level) const override;
