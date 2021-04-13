@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "envoy/buffer/buffer.h"
 #include "envoy/common/random_generator.h"
 #include "envoy/common/scope_tracker.h"
 #include "envoy/config/core/v3/protocol.pb.h"
@@ -17,6 +18,7 @@
 
 #include "common/buffer/buffer_impl.h"
 #include "common/buffer/watermark_buffer.h"
+#include "common/common/assert.h"
 #include "common/common/linked_object.h"
 #include "common/common/logger.h"
 #include "common/common/statusor.h"
@@ -375,6 +377,11 @@ protected:
     // ScopeTrackedObject
     void dumpState(std::ostream& os, int indent_level) const override;
 
+    // Http::Stream
+    Buffer::AccountSharedPtr getAccount() const override { return buffer_memory_account_; }
+    void setAccount(Buffer::AccountSharedPtr account) override;
+
+    Buffer::AccountSharedPtr buffer_memory_account_;
     ResponseDecoder& response_decoder_;
     absl::variant<ResponseHeaderMapPtr, ResponseTrailerMapPtr> headers_or_trailers_;
     std::string upgrade_type_;
@@ -387,7 +394,11 @@ protected:
    */
   struct ServerStreamImpl : public StreamImpl, public ResponseEncoder {
     ServerStreamImpl(ConnectionImpl& parent, uint32_t buffer_limit)
-        : StreamImpl(parent, buffer_limit), headers_or_trailers_(RequestHeaderMapImpl::create()) {}
+        : StreamImpl(parent, buffer_limit), headers_or_trailers_(RequestHeaderMapImpl::create()),
+          buffer_memory_account_(std::make_shared<Buffer::BufferMemoryAccount>()) {
+      pending_recv_data_.bindAccount(buffer_memory_account_);
+      pending_send_data_.bindAccount(buffer_memory_account_);
+    }
 
     // StreamImpl
     void submitHeaders(const std::vector<nghttp2_nv>& final_headers,
@@ -420,8 +431,17 @@ protected:
     // ScopeTrackedObject
     void dumpState(std::ostream& os, int indent_level) const override;
 
+    // Http::Stream
+    Buffer::AccountSharedPtr getAccount() const override { return buffer_memory_account_; }
+    void setAccount(Buffer::AccountSharedPtr) override {
+      RELEASE_ASSERT(
+          false,
+          "Server Stream creates an account during construction. This should not be called.");
+    }
+
     RequestDecoder* request_decoder_{};
     absl::variant<RequestHeaderMapPtr, RequestTrailerMapPtr> headers_or_trailers_;
+    Buffer::AccountSharedPtr buffer_memory_account_;
 
     bool streamErrorOnInvalidHttpMessage() const override {
       return parent_.stream_error_on_invalid_http_messaging_;

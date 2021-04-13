@@ -82,6 +82,12 @@ public:
     request_encoder_->getStream().resetStream(Envoy::Http::StreamResetReason::LocalReset);
   }
 
+  void setAccount(Buffer::AccountSharedPtr account) override {
+    // TODO(kbaichoo): check std::move() shared_ptr avoids creating new one esp.
+    // if just copying... like to avoid to atomic inc, other bookkeeping etc. if possible.
+    request_encoder_->getStream().setAccount(std::move(account));
+  }
+
   // Http::StreamCallbacks
   void onResetStream(Envoy::Http::StreamResetReason reason,
                      absl::string_view transport_failure_reason) override {
