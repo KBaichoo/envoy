@@ -1332,7 +1332,7 @@ public:
    * Sets the upstream to use the following account.
    * @param the account to assign the generic upstream.
    */
-  virtual void setAccount(Buffer::AccountSharedPtr account) PURE;
+  virtual void setAccount(Buffer::BufferMemoryAccountSharedPtr account) PURE;
 };
 
 using GenericConnPoolPtr = std::unique_ptr<GenericConnPool>;

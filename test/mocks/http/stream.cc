@@ -28,7 +28,7 @@ MockStream::MockStream() {
   ON_CALL(*this, getAccount()).WillByDefault(Return(account_));
   ON_CALL(*this, setAccount(_))
       .WillByDefault(
-          Invoke([this](Buffer::AccountSharedPtr account) -> void { account_ = account; }));
+          Invoke([this](Buffer::BufferMemoryAccountSharedPtr account) -> void { account_ = account; }));
 }
 
 MockStream::~MockStream() = default;

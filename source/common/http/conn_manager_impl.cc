@@ -573,7 +573,7 @@ void ConnectionManagerImpl::RdsRouteConfigUpdateRequester::requestSrdsUpdate(
 
 ConnectionManagerImpl::ActiveStream::ActiveStream(ConnectionManagerImpl& connection_manager,
                                                   uint32_t buffer_limit,
-                                                  Buffer::AccountSharedPtr account)
+                                                  Buffer::BufferMemoryAccountSharedPtr account)
     : connection_manager_(connection_manager),
       stream_id_(connection_manager.random_generator_.random()),
       filter_manager_(*this, connection_manager_.read_callbacks_->connection().dispatcher(),

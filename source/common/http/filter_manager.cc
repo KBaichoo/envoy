@@ -1560,7 +1560,7 @@ void ActiveStreamFilterBase::resetStream() { parent_.filter_manager_callbacks_.r
 
 uint64_t ActiveStreamFilterBase::streamId() const { return parent_.streamId(); }
 
-Buffer::AccountSharedPtr ActiveStreamDecoderFilter::account() const { return parent_.account(); }
+Buffer::BufferMemoryAccountSharedPtr ActiveStreamDecoderFilter::account() const { return parent_.account(); }
 
 } // namespace Http
 } // namespace Envoy

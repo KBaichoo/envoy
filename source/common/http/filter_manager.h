@@ -276,7 +276,7 @@ struct ActiveStreamDecoderFilter : public ActiveStreamFilterBase,
   void addUpstreamSocketOptions(const Network::Socket::OptionsSharedPtr& options) override;
 
   Network::Socket::OptionsSharedPtr getUpstreamSocketOptions() const override;
-  Buffer::AccountSharedPtr account() const override;
+  Buffer::BufferMemoryAccountSharedPtr account() const override;
 
   // Each decoder filter instance checks if the request passed to the filter is gRPC
   // so that we can issue gRPC local responses to gRPC requests. Filter's decodeHeaders()
@@ -641,7 +641,7 @@ class FilterManager : public ScopeTrackedObject,
 public:
   FilterManager(FilterManagerCallbacks& filter_manager_callbacks, Event::Dispatcher& dispatcher,
                 const Network::Connection& connection, uint64_t stream_id,
-                Buffer::AccountSharedPtr account, bool proxy_100_continue, uint32_t buffer_limit,
+                Buffer::BufferMemoryAccountSharedPtr account, bool proxy_100_continue, uint32_t buffer_limit,
                 FilterChainFactory& filter_chain_factory, const LocalReply::LocalReply& local_reply,
                 Http::Protocol protocol, TimeSource& time_source,
                 StreamInfo::FilterStateSharedPtr parent_filter_state,
@@ -914,7 +914,7 @@ public:
   const Network::Connection* connection() const { return &connection_; }
 
   uint64_t streamId() const { return stream_id_; }
-  Buffer::AccountSharedPtr account() const { return account_; }
+  Buffer::BufferMemoryAccountSharedPtr account() const { return account_; }
 
   Buffer::InstancePtr& bufferedRequestData() { return buffered_request_data_; }
 
@@ -986,7 +986,7 @@ private:
   Event::Dispatcher& dispatcher_;
   const Network::Connection& connection_;
   const uint64_t stream_id_;
-  Buffer::AccountSharedPtr account_;
+  Buffer::BufferMemoryAccountSharedPtr account_;
   const bool proxy_100_continue_;
 
   std::list<ActiveStreamDecoderFilterPtr> decoder_filters_;

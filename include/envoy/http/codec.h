@@ -384,7 +384,7 @@ public:
   /**
    * @return the account associated with this stream.
    */
-  virtual Buffer::AccountSharedPtr getAccount() const PURE;
+  virtual Buffer::BufferMemoryAccountSharedPtr getAccount() const PURE;
 
   /**
    * Sets the account for this stream, propagating it to all of its buffers.
@@ -392,7 +392,7 @@ public:
    * their own account.
    * @param the account to assign this stream.
    */
-  virtual void setAccount(Buffer::AccountSharedPtr account) PURE;
+  virtual void setAccount(Buffer::BufferMemoryAccountSharedPtr account) PURE;
 };
 
 /**

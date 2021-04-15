@@ -157,7 +157,7 @@ private:
                               public ScopeTrackedObject,
                               public FilterManagerCallbacks {
     ActiveStream(ConnectionManagerImpl& connection_manager, uint32_t buffer_limit,
-                 Buffer::AccountSharedPtr account);
+                 Buffer::BufferMemoryAccountSharedPtr account);
     void completeRequest();
 
     const Network::Connection* connection();

@@ -48,12 +48,12 @@ public:
   // Http::Stream
   void resetStream(Http::StreamResetReason reason) override;
   void setFlushTimeout(std::chrono::milliseconds) override {}
-  Buffer::AccountSharedPtr getAccount() const override {
+  Buffer::BufferMemoryAccountSharedPtr getAccount() const override {
     // TODO(kbaichoo): implement account tracking for QUIC.
     return nullptr;
   }
 
-  void setAccount(Buffer::AccountSharedPtr) override {
+  void setAccount(Buffer::BufferMemoryAccountSharedPtr) override {
     // TODO(kbaichoo): implement account tracking for QUIC.
   }
   // quic::QuicSpdyStream

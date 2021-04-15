@@ -378,10 +378,12 @@ protected:
     void dumpState(std::ostream& os, int indent_level) const override;
 
     // Http::Stream
-    Buffer::AccountSharedPtr getAccount() const override { return buffer_memory_account_; }
-    void setAccount(Buffer::AccountSharedPtr account) override;
+    Buffer::BufferMemoryAccountSharedPtr getAccount() const override {
+      return buffer_memory_account_;
+    }
+    void setAccount(Buffer::BufferMemoryAccountSharedPtr account) override;
 
-    Buffer::AccountSharedPtr buffer_memory_account_;
+    Buffer::BufferMemoryAccountSharedPtr buffer_memory_account_;
     ResponseDecoder& response_decoder_;
     absl::variant<ResponseHeaderMapPtr, ResponseTrailerMapPtr> headers_or_trailers_;
     std::string upgrade_type_;
@@ -395,7 +397,7 @@ protected:
   struct ServerStreamImpl : public StreamImpl, public ResponseEncoder {
     ServerStreamImpl(ConnectionImpl& parent, uint32_t buffer_limit)
         : StreamImpl(parent, buffer_limit), headers_or_trailers_(RequestHeaderMapImpl::create()),
-          buffer_memory_account_(std::make_shared<Buffer::BufferMemoryAccount>()) {
+          buffer_memory_account_(std::make_shared<Buffer::BufferMemoryAccountImpl>()) {
       pending_recv_data_.bindAccount(buffer_memory_account_);
       pending_send_data_.bindAccount(buffer_memory_account_);
     }
@@ -432,8 +434,10 @@ protected:
     void dumpState(std::ostream& os, int indent_level) const override;
 
     // Http::Stream
-    Buffer::AccountSharedPtr getAccount() const override { return buffer_memory_account_; }
-    void setAccount(Buffer::AccountSharedPtr) override {
+    Buffer::BufferMemoryAccountSharedPtr getAccount() const override {
+      return buffer_memory_account_;
+    }
+    void setAccount(Buffer::BufferMemoryAccountSharedPtr) override {
       RELEASE_ASSERT(
           false,
           "Server Stream creates an account during construction. This should not be called.");
@@ -441,7 +445,7 @@ protected:
 
     RequestDecoder* request_decoder_{};
     absl::variant<RequestHeaderMapPtr, RequestTrailerMapPtr> headers_or_trailers_;
-    Buffer::AccountSharedPtr buffer_memory_account_;
+    Buffer::BufferMemoryAccountSharedPtr buffer_memory_account_;
 
     bool streamErrorOnInvalidHttpMessage() const override {
       return parent_.stream_error_on_invalid_http_messaging_;

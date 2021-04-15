@@ -82,9 +82,7 @@ public:
     request_encoder_->getStream().resetStream(Envoy::Http::StreamResetReason::LocalReset);
   }
 
-  void setAccount(Buffer::AccountSharedPtr account) override {
-    // TODO(kbaichoo): check std::move() shared_ptr avoids creating new one esp.
-    // if just copying... like to avoid to atomic inc, other bookkeeping etc. if possible.
+  void setAccount(Buffer::BufferMemoryAccountSharedPtr account) override {
     request_encoder_->getStream().setAccount(std::move(account));
   }
 

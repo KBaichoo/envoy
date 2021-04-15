@@ -1530,7 +1530,7 @@ void ConnectionImpl::ServerStreamImpl::dumpState(std::ostream& os, int indent_le
   }
 }
 
-void ConnectionImpl::ClientStreamImpl::setAccount(Buffer::AccountSharedPtr account) {
+void ConnectionImpl::ClientStreamImpl::setAccount(Buffer::BufferMemoryAccountSharedPtr account) {
   buffer_memory_account_ = account;
   pending_recv_data_.bindAccount(buffer_memory_account_);
   pending_send_data_.bindAccount(buffer_memory_account_);

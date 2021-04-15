@@ -548,7 +548,7 @@ public:
   /**
    * @return the account, if any, used by this stream.
    */
-  virtual Buffer::AccountSharedPtr account() const PURE;
+  virtual Buffer::BufferMemoryAccountSharedPtr account() const PURE;
 
   /**
    * Takes a stream, and acts as if the headers are newly arrived.
