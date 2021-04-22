@@ -396,7 +396,7 @@ TEST_P(Http2FloodMitigationTest, Data) {
 
   // The factory will be used to create 4 buffers: the input and output buffers for request and
   // response pipelines.
-  EXPECT_EQ(4, buffer_factory->numBuffersCreated());
+  EXPECT_EQ(8, buffer_factory->numBuffersCreated());
 
   // Expect at least 1000 1 byte data frames in the output buffer. Each data frame comes with a
   // 9-byte frame header; 10 bytes per data frame, 10000 bytes total. The output buffer should also
@@ -411,7 +411,7 @@ TEST_P(Http2FloodMitigationTest, Data) {
   EXPECT_GE(22000, buffer_factory->sumMaxBufferSizes());
   // Verify that all buffers have watermarks set.
   EXPECT_THAT(buffer_factory->highWatermarkRange(),
-              testing::Pair(1024 * 1024 * 1024, 1024 * 1024 * 1024));
+              testing::Pair(256 * 1024 * 1024, 1024 * 1024 * 1024));
 }
 
 // Verify that the server can detect flood triggered by a DATA frame from a decoder filter call
