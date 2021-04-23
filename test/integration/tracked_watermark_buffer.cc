@@ -1,4 +1,5 @@
 #include "test/integration/tracked_watermark_buffer.h"
+#include <iostream>
 
 namespace Envoy {
 namespace Buffer {
@@ -18,18 +19,29 @@ TrackedWatermarkBufferFactory::create(std::function<void()> below_low_watermark,
   return std::make_unique<TrackedWatermarkBuffer>(
       [this, &buffer_info](uint64_t current_size) {
         absl::MutexLock lock(&mutex_);
+        total_buffer_size_ = total_buffer_size_ + current_size - buffer_info.current_size_;
         if (buffer_info.max_size_ < current_size) {
           buffer_info.max_size_ = current_size;
         }
+        buffer_info.current_size_ = current_size;
       },
       [this, &buffer_info](uint32_t watermark) {
         absl::MutexLock lock(&mutex_);
         buffer_info.watermark_ = watermark;
       },
-      [this]() {
+      [this, &buffer_info]() {
         absl::MutexLock lock(&mutex_);
         ASSERT(active_buffer_count_ > 0);
         --active_buffer_count_;
+        // TODO(kbaichoo): update account information on death?
+        total_buffer_size_ -= buffer_info.current_size_;
+        buffer_info.current_size_ = 0;
+      },
+      [](BufferMemoryAccountSharedPtr account, TrackedWatermarkBuffer*) {
+        // TODO(kbaichoo): add on_bind implementation
+        std::cout << __FILE__ << ":" << __LINE__ << " : OnBindCalled!";
+        std::cout << " Account:" << account.get() << " has use count:" << account.use_count()
+                  << std::endl;
       },
       below_low_watermark, above_high_watermark, above_overflow_watermark);
 }
@@ -42,6 +54,11 @@ uint64_t TrackedWatermarkBufferFactory::numBuffersCreated() const {
 uint64_t TrackedWatermarkBufferFactory::numBuffersActive() const {
   absl::MutexLock lock(&mutex_);
   return active_buffer_count_;
+}
+
+uint64_t TrackedWatermarkBufferFactory::totalBufferSize() const {
+  absl::MutexLock lock(&mutex_);
+  return total_buffer_size_;
 }
 
 uint64_t TrackedWatermarkBufferFactory::maxBufferSize() const {
@@ -92,6 +109,16 @@ std::pair<uint32_t, uint32_t> TrackedWatermarkBufferFactory::highWatermarkRange(
   }
 
   return std::make_pair(min_watermark, max_watermark);
+}
+
+bool TrackedWatermarkBufferFactory::waitUntilTotalBufferedExceeds(
+    uint64_t byte_size, std::chrono::milliseconds timeout) {
+  absl::MutexLock lock(&mutex_);
+  auto predicate = [this, byte_size]() ABSL_SHARED_LOCKS_REQUIRED(mutex_) {
+    mutex_.AssertHeld();
+    return total_buffer_size_ >= byte_size;
+  };
+  return mutex_.AwaitWithTimeout(absl::Condition(&predicate), absl::Milliseconds(timeout.count()));
 }
 
 } // namespace Buffer
