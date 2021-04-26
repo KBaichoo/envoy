@@ -46,7 +46,11 @@ TrackedWatermarkBufferFactory::create(std::function<void()> below_low_watermark,
 
           // Erase account entry if there are no active bound buffers.
           if (set.empty()) {
-            account_infos_.erase(account);
+            ASSERT(account_infos_.erase(account) == 1);
+
+            // Only local account and the buffer itself should have a remaining
+            // pointer to the BufferMemoryAccount.
+            ASSERT(account.use_count() == 2);
           }
         }
       },

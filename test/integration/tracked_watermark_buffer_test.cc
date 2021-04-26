@@ -136,6 +136,10 @@ TEST_F(TrackedWatermarkBufferTest, TracksNumberOfBuffersActivelyBound) {
   buffer3->bindAccount(account);
   EXPECT_EQ(factory_.numBuffersActivelyBound(), 3);
 
+  // Release test access to the account as the factory if an account has
+  // no bound buffers, it should be deleted.
+  account.reset();
+
   buffer3.reset();
   EXPECT_EQ(factory_.numBuffersActivelyBound(), 2);
   buffer2.reset();
@@ -149,7 +153,6 @@ TEST_F(TrackedWatermarkBufferTest, TracksNumberOfAccountsActive) {
   auto buffer2 = factory_.create([]() {}, []() {}, []() {});
   auto buffer3 = factory_.create([]() {}, []() {}, []() {});
   BufferMemoryAccountSharedPtr account1 = std::make_shared<BufferMemoryAccountImpl>();
-  BufferMemoryAccountSharedPtr account2 = std::make_shared<BufferMemoryAccountImpl>();
   ASSERT_EQ(factory_.numAccountsActive(), 0);
 
   buffer1->bindAccount(account1);
@@ -157,7 +160,11 @@ TEST_F(TrackedWatermarkBufferTest, TracksNumberOfAccountsActive) {
   buffer2->bindAccount(account1);
   EXPECT_EQ(factory_.numAccountsActive(), 1);
 
-  buffer3->bindAccount(account2);
+  // Release test access to the account as the factory if an account has
+  // no bound buffers, it should be deleted.
+  account1.reset();
+
+  buffer3->bindAccount(std::make_shared<BufferMemoryAccountImpl>());
   EXPECT_EQ(factory_.numAccountsActive(), 2);
 
   buffer2.reset();
