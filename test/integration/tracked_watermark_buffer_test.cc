@@ -1,9 +1,12 @@
+#include "common/buffer/buffer_impl.h"
+#include "envoy/buffer/buffer.h"
 #include "test/integration/tracked_watermark_buffer.h"
 #include "test/mocks/common.h"
 #include "test/test_common/test_runtime.h"
 #include "test/test_common/thread_factory_for_test.h"
 
 #include "gtest/gtest.h"
+#include <memory>
 
 using testing::InSequence;
 using testing::Pair;
@@ -119,7 +122,52 @@ TEST_F(TrackedWatermarkBufferTest, WaitUntilTotalBufferedExceeds) {
   EXPECT_EQ(1, factory_.maxBufferSize());
 }
 
-// TODO(kbaichoo): Add some tests using on_bind_ cb
+TEST_F(TrackedWatermarkBufferTest, TracksNumberOfBuffersActivelyBound) {
+  auto buffer1 = factory_.create([]() {}, []() {}, []() {});
+  auto buffer2 = factory_.create([]() {}, []() {}, []() {});
+  auto buffer3 = factory_.create([]() {}, []() {}, []() {});
+  BufferMemoryAccountSharedPtr account = std::make_shared<BufferMemoryAccountImpl>();
+  ASSERT_EQ(factory_.numBuffersActivelyBound(), 0);
+
+  buffer1->bindAccount(account);
+  EXPECT_EQ(factory_.numBuffersActivelyBound(), 1);
+  buffer2->bindAccount(account);
+  EXPECT_EQ(factory_.numBuffersActivelyBound(), 2);
+  buffer3->bindAccount(account);
+  EXPECT_EQ(factory_.numBuffersActivelyBound(), 3);
+
+  buffer3.reset();
+  EXPECT_EQ(factory_.numBuffersActivelyBound(), 2);
+  buffer2.reset();
+  EXPECT_EQ(factory_.numBuffersActivelyBound(), 1);
+  buffer1.reset();
+  EXPECT_EQ(factory_.numBuffersActivelyBound(), 0);
+}
+
+TEST_F(TrackedWatermarkBufferTest, TracksNumberOfAccountsActive) {
+  auto buffer1 = factory_.create([]() {}, []() {}, []() {});
+  auto buffer2 = factory_.create([]() {}, []() {}, []() {});
+  auto buffer3 = factory_.create([]() {}, []() {}, []() {});
+  BufferMemoryAccountSharedPtr account1 = std::make_shared<BufferMemoryAccountImpl>();
+  BufferMemoryAccountSharedPtr account2 = std::make_shared<BufferMemoryAccountImpl>();
+  ASSERT_EQ(factory_.numAccountsActive(), 0);
+
+  buffer1->bindAccount(account1);
+  EXPECT_EQ(factory_.numAccountsActive(), 1);
+  buffer2->bindAccount(account1);
+  EXPECT_EQ(factory_.numAccountsActive(), 1);
+
+  buffer3->bindAccount(account2);
+  EXPECT_EQ(factory_.numAccountsActive(), 2);
+
+  buffer2.reset();
+  EXPECT_EQ(factory_.numAccountsActive(), 2);
+  buffer1.reset();
+  EXPECT_EQ(factory_.numAccountsActive(), 1);
+
+  buffer3.reset();
+  EXPECT_EQ(factory_.numAccountsActive(), 0);
+}
 
 } // namespace
 } // namespace Buffer

@@ -29,19 +29,33 @@ TrackedWatermarkBufferFactory::create(std::function<void()> below_low_watermark,
         absl::MutexLock lock(&mutex_);
         buffer_info.watermark_ = watermark;
       },
-      [this, &buffer_info]() {
+      [this, &buffer_info](TrackedWatermarkBuffer* buffer) {
         absl::MutexLock lock(&mutex_);
         ASSERT(active_buffer_count_ > 0);
         --active_buffer_count_;
-        // TODO(kbaichoo): update account information on death?
         total_buffer_size_ -= buffer_info.current_size_;
         buffer_info.current_size_ = 0;
+
+        // Remove bound account tracking.
+        auto account = buffer->getAccountForTest();
+        if (account) {
+          auto& set = account_infos_[account];
+          // Erase buffer, one entry should be removed.
+          ASSERT(set.erase(buffer) == 1);
+          ASSERT(actively_bound_buffers_.erase(buffer) == 1);
+
+          // Erase account entry if there are no active bound buffers.
+          if (set.empty()) {
+            account_infos_.erase(account);
+          }
+        }
       },
-      [](BufferMemoryAccountSharedPtr account, TrackedWatermarkBuffer*) {
-        // TODO(kbaichoo): add on_bind implementation
-        std::cout << __FILE__ << ":" << __LINE__ << " : OnBindCalled!";
-        std::cout << " Account:" << account.get() << " has use count:" << account.use_count()
-                  << std::endl;
+      [this](BufferMemoryAccountSharedPtr& account, TrackedWatermarkBuffer* buffer) {
+        absl::MutexLock lock(&mutex_);
+        // Buffers should only be bound once.
+        ASSERT(actively_bound_buffers_.find(buffer) == actively_bound_buffers_.end());
+        account_infos_[account].emplace(buffer);
+        actively_bound_buffers_.emplace(buffer);
       },
       below_low_watermark, above_high_watermark, above_overflow_watermark);
 }
@@ -119,6 +133,16 @@ bool TrackedWatermarkBufferFactory::waitUntilTotalBufferedExceeds(
     return total_buffer_size_ >= byte_size;
   };
   return mutex_.AwaitWithTimeout(absl::Condition(&predicate), absl::Milliseconds(timeout.count()));
+}
+
+uint64_t TrackedWatermarkBufferFactory::numAccountsActive() const {
+  absl::MutexLock lock(&mutex_);
+  return account_infos_.size();
+}
+
+uint64_t TrackedWatermarkBufferFactory::numBuffersActivelyBound() const {
+  absl::MutexLock lock(&mutex_);
+  return actively_bound_buffers_.size();
 }
 
 } // namespace Buffer
