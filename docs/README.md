@@ -2,6 +2,10 @@
 
 There are two methods to build the documentation, described below.
 
+Some important change.
+
+Less important change
+
 In both cases, the generated output can be found in `generated/docs`.
 
 ## Building in an existing Envoy development environment
