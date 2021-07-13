@@ -4,6 +4,7 @@
 #include <string>
 
 #include "envoy/buffer/buffer.h"
+#include "envoy/config/bootstrap/v3/bootstrap.pb.h"
 
 #include "source/common/buffer/buffer_impl.h"
 
@@ -148,6 +149,8 @@ private:
 
 class WatermarkBufferFactory : public WatermarkFactory {
 public:
+  WatermarkBufferFactory(const envoy::config::bootstrap::v3::BufferFactoryConfig& config);
+
   // Buffer::WatermarkFactory
   ~WatermarkBufferFactory() override;
   InstancePtr createBuffer(std::function<void()> below_low_watermark,
@@ -164,6 +167,8 @@ public:
   void updateAccountClass(const BufferMemoryAccountSharedPtr& account, int current_class,
                           int new_class);
 
+  uint32_t bitshift() const { return bitshift_; }
+
   // Unregister a buffer memory account.
   virtual void unregisterAccount(const BufferMemoryAccountSharedPtr& account, int current_class);
 
@@ -172,6 +177,7 @@ protected:
   using MemoryClassesToAccountsSet = std::array<absl::flat_hash_set<BufferMemoryAccountSharedPtr>,
                                                 BufferMemoryAccountImpl::NUM_MEMORY_CLASSES_>;
   MemoryClassesToAccountsSet size_class_account_sets_;
+  uint32_t bitshift_;
 };
 
 } // namespace Buffer
