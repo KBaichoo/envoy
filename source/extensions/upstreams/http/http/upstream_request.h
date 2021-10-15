@@ -62,6 +62,12 @@ public:
     request_encoder_->getStream().addCallbacks(*this);
   }
 
+  ~HttpUpstream() {
+    if (request_encoder_) {
+      request_encoder_->getStream.removeCallbacks(*this);
+    }
+  }
+
   // GenericUpstream
   void encodeData(Buffer::Instance& data, bool end_stream) override {
     request_encoder_->encodeData(data, end_stream);
@@ -100,6 +106,15 @@ public:
 
   void onBelowWriteBufferLowWatermark() override {
     upstream_request_.onBelowWriteBufferLowWatermark();
+  }
+
+  void onCodecClose() override {
+    if (request_encoder_) {
+      request_encoder_->getStream.removeCallbacks(*this);
+      // Forward information to the upstream request.
+      upstream_request_.onCodecClose();
+      request_encoder_ = nullptr;
+    }
   }
 
 private:

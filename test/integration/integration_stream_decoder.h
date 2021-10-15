@@ -24,6 +24,7 @@ namespace Envoy {
 class IntegrationStreamDecoder : public Http::ResponseDecoder, public Http::StreamCallbacks {
 public:
   IntegrationStreamDecoder(Event::Dispatcher& dispatcher);
+  ~IntegrationStreamDecoder();
 
   const std::string& body() { return body_; }
   bool complete() { return saw_end_stream_; }
@@ -46,6 +47,11 @@ public:
   ABSL_MUST_USE_RESULT testing::AssertionResult
   waitForReset(std::chrono::milliseconds timeout = TestUtility::DefaultTimeout);
   void clearBody() { body_.clear(); }
+  // Used to track the RequestEncoder that this is subscribed to.
+  void setEncoder(Http::RequestEncoder* encoder) {
+    ASSERT(!encoder_);
+    encoder_ = encoder;
+  }
 
   // Http::StreamDecoder
   void decodeData(Buffer::Instance& data, bool end_stream) override;
@@ -64,9 +70,11 @@ public:
                      absl::string_view transport_failure_reason) override;
   void onAboveWriteBufferHighWatermark() override {}
   void onBelowWriteBufferLowWatermark() override {}
+  void onCodecClose() override;
 
 private:
   Event::Dispatcher& dispatcher_;
+  Http::RequestEncoder* encoder_{nullptr};
   Http::ResponseHeaderMapPtr continue_headers_;
   Http::ResponseHeaderMapPtr headers_;
   Http::ResponseTrailerMapPtr trailers_;

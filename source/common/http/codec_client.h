@@ -226,6 +226,17 @@ private:
     }
     void onAboveWriteBufferHighWatermark() override {}
     void onBelowWriteBufferLowWatermark() override {}
+    void onCodecClose() override {
+      cleanupEncoder();
+      // TODO(kbaichoo): Implement forwarding to the parent.
+    }
+
+    void cleanupEncoder() {
+      if (encoder_) {
+        encoder_->getStream().removeCallbacks(*this);
+        encoder_ = nullptr;
+      }
+    }
 
     // StreamDecoderWrapper
     void onPreDecodeComplete() override { parent_.responsePreDecodeComplete(*this); }

@@ -62,6 +62,11 @@ class FakeStream : public Http::RequestDecoder,
 public:
   FakeStream(FakeHttpConnection& parent, Http::ResponseEncoder& encoder,
              Event::TestTimeSystem& time_system);
+  ~FakeStream() {
+    if (encoder_) {
+      encoder_->getStream().removeCallbacks(*this);
+    }
+  }
 
   uint64_t bodyLength() {
     absl::MutexLock lock(&lock_);
@@ -97,7 +102,7 @@ public:
   const Http::RequestTrailerMapPtr& trailers() { return trailers_; }
   bool receivedData() { return received_data_; }
   Http::Http1StreamEncoderOptionsOptRef http1StreamEncoderOptions() {
-    return encoder_.http1StreamEncoderOptions();
+    return encoder_->http1StreamEncoderOptions();
   }
   void
   sendLocalReply(Http::Code code, absl::string_view body,
@@ -115,10 +120,10 @@ public:
         Http::Utility::EncodeFunctions(
             {nullptr, nullptr,
              [&](Http::ResponseHeaderMapPtr&& headers, bool end_stream) -> void {
-               encoder_.encodeHeaders(*headers, end_stream);
+               encoder_->encodeHeaders(*headers, end_stream);
              },
              [&](Buffer::Instance& data, bool end_stream) -> void {
-               encoder_.encodeData(data, end_stream);
+               encoder_->encodeData(data, end_stream);
              }}),
         Http::Utility::LocalReplyData({false, code, body, grpc_status, is_head_request}));
   }
@@ -222,6 +227,7 @@ public:
                      absl::string_view transport_failure_reason) override;
   void onAboveWriteBufferHighWatermark() override {}
   void onBelowWriteBufferLowWatermark() override {}
+  void onCodecClose() override;
 
   virtual void setEndStream(bool end) ABSL_EXCLUSIVE_LOCKS_REQUIRED(lock_) { end_stream_ = end; }
 
@@ -239,7 +245,7 @@ protected:
   FakeHttpConnection& parent_;
 
 private:
-  Http::ResponseEncoder& encoder_;
+  Http::ResponseEncoder* encoder_;
   Http::RequestTrailerMapPtr trailers_ ABSL_GUARDED_BY(lock_);
   bool end_stream_ ABSL_GUARDED_BY(lock_){};
   bool saw_reset_ ABSL_GUARDED_BY(lock_){};

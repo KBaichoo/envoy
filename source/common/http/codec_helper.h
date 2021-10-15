@@ -13,6 +13,12 @@ namespace Http {
 
 class StreamCallbackHelper {
 public:
+  ~StreamCallbackHelper() {
+    ASSERT(std::find_if(callbacks_.begin(), callbacks_.end(),
+                        [](StreamCallbacks* cb) { return cb != nullptr; }) == callbacks_.end(),
+           "There is at least one lingering observer on the codec.");
+  }
+
   void runLowWatermarkCallbacks() {
     if (reset_callbacks_started_ || local_end_stream_) {
       return;
@@ -78,6 +84,15 @@ protected:
     }
   }
 
+  void notifyObserversToDetach() {
+    // Tell any lingering observers the stream is going away.
+    for (StreamCallbacks* cb : callbacks_) {
+      if (cb) {
+        cb->onCodecClose();
+      }
+    }
+  }
+
 private:
   absl::InlinedVector<StreamCallbacks*, 8> callbacks_;
   bool reset_callbacks_started_{};
@@ -93,7 +108,10 @@ public:
   // TODO(mattklein123): Optimally this would be done in the destructor but there are currently
   // deferred delete lifetime issues that need sorting out if the destructor of the stream is
   // going to be able to refer to the parent connection.
-  virtual void destroy() { disarmStreamIdleTimer(); }
+  virtual void destroy() {
+    disarmStreamIdleTimer();
+    notifyObserversToDetach();
+  }
 
   void onLocalEndStream() {
     ASSERT(local_end_stream_);

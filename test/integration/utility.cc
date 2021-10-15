@@ -152,12 +152,14 @@ sendRequestAndWaitForResponse(Event::Dispatcher& dispatcher, const std::string& 
                               const std::string& url, const std::string& body,
                               const std::string& host, const std::string& content_type,
                               Http::CodecClientProd& client) {
-  BufferingStreamDecoderPtr response(new BufferingStreamDecoder([&]() -> void {
+  BufferingStreamDecoderPtr response = std::make_unique<BufferingStreamDecoder>([&]() -> void {
     client.close();
     dispatcher.exit();
-  }));
+  });
+
   Http::RequestEncoder& encoder = client.newStream(*response);
   encoder.getStream().addCallbacks(*response);
+  response->setEncoder(encoder);
 
   Http::TestRequestHeaderMapImpl headers;
   headers.setMethod(method);

@@ -71,6 +71,11 @@ void ActiveClient::StreamWrapper::onResetStream(StreamResetReason, absl::string_
   parent_.codec_client_->close();
 }
 
+void ActiveClient::StreamWrapper::onCodecClose() {
+  // Remove as listener of the codecs callbacks.
+  ResponseEncoderWrapper::inner_.getStream().removeCallbacks(*this);
+}
+
 ActiveClient::ActiveClient(HttpConnPoolImplBase& parent)
     : Envoy::Http::ActiveClient(
           parent, parent.host()->cluster().maxRequestsPerConnection(),

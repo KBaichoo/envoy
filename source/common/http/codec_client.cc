@@ -65,6 +65,8 @@ void CodecClient::connect() {
 void CodecClient::close() { connection_->close(Network::ConnectionCloseType::NoFlush); }
 
 void CodecClient::deleteRequest(ActiveRequest& request) {
+  request.cleanupEncoder();
+
   connection_->dispatcher().deferredDelete(request.removeFromList(active_requests_));
   if (codec_client_callbacks_) {
     codec_client_callbacks_->onStreamDestroy();
@@ -129,12 +131,10 @@ void CodecClient::responsePreDecodeComplete(ActiveRequest& request) {
   if (codec_client_callbacks_) {
     codec_client_callbacks_->onStreamPreDecodeComplete();
   }
-  deleteRequest(request);
-
   // HTTP/2 can send us a reset after a complete response if the request was not complete. Users
   // of CodecClient will deal with the premature response case and we should not handle any
   // further reset notification.
-  request.encoder_->getStream().removeCallbacks(request);
+  deleteRequest(request);
 }
 
 void CodecClient::onReset(ActiveRequest& request, StreamResetReason reason) {

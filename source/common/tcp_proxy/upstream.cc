@@ -112,6 +112,13 @@ void HttpUpstream::onBelowWriteBufferLowWatermark() {
   upstream_callbacks_.onBelowWriteBufferLowWatermark();
 }
 
+void HttpUpstream::onCodecClose() {
+  if (request_encoder_) {
+    request_encoder_->getStream().removeCallbacks(*this);
+    request_encoder_ = nullptr;
+  }
+}
+
 void HttpUpstream::resetEncoder(Network::ConnectionEvent event, bool inform_downstream) {
   if (!request_encoder_) {
     return;

@@ -38,7 +38,7 @@ namespace Envoy {
 
 FakeStream::FakeStream(FakeHttpConnection& parent, Http::ResponseEncoder& encoder,
                        Event::TestTimeSystem& time_system)
-    : parent_(parent), encoder_(encoder), time_system_(time_system) {
+    : parent_(parent), encoder_(&encoder), time_system_(time_system) {
   encoder.getStream().addCallbacks(*this);
 }
 
@@ -83,7 +83,7 @@ void FakeStream::encode100ContinueHeaders(const Http::ResponseHeaderMap& headers
         return;
       }
     }
-    encoder_.encode100ContinueHeaders(*headers_copy);
+    encoder_->encode100ContinueHeaders(*headers_copy);
   });
 }
 
@@ -103,7 +103,7 @@ void FakeStream::encodeHeaders(const Http::HeaderMap& headers, bool end_stream) 
         return;
       }
     }
-    encoder_.encodeHeaders(*headers_copy, end_stream);
+    encoder_->encodeHeaders(*headers_copy, end_stream);
   });
 }
 
@@ -117,7 +117,7 @@ void FakeStream::encodeData(absl::string_view data, bool end_stream) {
       }
     }
     Buffer::OwnedImpl fake_data(data.data(), data.size());
-    encoder_.encodeData(fake_data, end_stream);
+    encoder_->encodeData(fake_data, end_stream);
   });
 }
 
@@ -131,7 +131,7 @@ void FakeStream::encodeData(uint64_t size, bool end_stream) {
       }
     }
     Buffer::OwnedImpl data(std::string(size, 'a'));
-    encoder_.encodeData(data, end_stream);
+    encoder_->encodeData(data, end_stream);
   });
 }
 
@@ -145,7 +145,7 @@ void FakeStream::encodeData(Buffer::Instance& data, bool end_stream) {
         return;
       }
     }
-    encoder_.encodeData(*data_copy, end_stream);
+    encoder_->encodeData(*data_copy, end_stream);
   });
 }
 
@@ -160,7 +160,7 @@ void FakeStream::encodeTrailers(const Http::HeaderMap& trailers) {
         return;
       }
     }
-    encoder_.encodeTrailers(*trailers_copy);
+    encoder_->encodeTrailers(*trailers_copy);
   });
 }
 
@@ -173,7 +173,7 @@ void FakeStream::encodeResetStream() {
         return;
       }
     }
-    encoder_.getStream().resetStream(Http::StreamResetReason::LocalReset);
+    encoder_->getStream().resetStream(Http::StreamResetReason::LocalReset);
   });
 }
 
@@ -186,7 +186,7 @@ void FakeStream::encodeMetadata(const Http::MetadataMapVector& metadata_map_vect
         return;
       }
     }
-    encoder_.encodeMetadata(metadata_map_vector);
+    encoder_->encodeMetadata(metadata_map_vector);
   });
 }
 
@@ -199,13 +199,20 @@ void FakeStream::readDisable(bool disable) {
         return;
       }
     }
-    encoder_.getStream().readDisable(disable);
+    encoder_->getStream().readDisable(disable);
   });
 }
 
 void FakeStream::onResetStream(Http::StreamResetReason, absl::string_view) {
   absl::MutexLock lock(&lock_);
   saw_reset_ = true;
+}
+
+void FakeStream::onCodecClose() {
+  if (encoder_) {
+    encoder_->getStream().removeCallbacks(*this);
+    encoder_ = nullptr;
+  }
 }
 
 AssertionResult FakeStream::waitForHeadersComplete(milliseconds timeout) {

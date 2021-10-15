@@ -135,6 +135,7 @@ public:
   MOCK_METHOD(void, onResetStream, (StreamResetReason reason, absl::string_view));
   MOCK_METHOD(void, onAboveWriteBufferHighWatermark, ());
   MOCK_METHOD(void, onBelowWriteBufferLowWatermark, ());
+  MOCK_METHOD(void, onCodecClose, (Stream&));
 };
 
 class MockServerConnection : public ServerConnection {

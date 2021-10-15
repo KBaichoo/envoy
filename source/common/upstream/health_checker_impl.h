@@ -115,7 +115,9 @@ private:
                        absl::string_view transport_failure_reason) override;
     void onAboveWriteBufferHighWatermark() override {}
     void onBelowWriteBufferLowWatermark() override {}
+    void onCodecClose() override { cleanupEncoder(); }
 
+    void cleanupEncoder();
     void onEvent(Network::ConnectionEvent event);
     void onGoAway(Http::GoAwayErrorCode error_code);
 
@@ -145,13 +147,13 @@ private:
     HttpConnectionCallbackImpl http_connection_callback_impl_{*this};
     HttpHealthCheckerImpl& parent_;
     Http::CodecClientPtr client_;
+    Http::RequestEncoder* request_encoder_{nullptr};
     Http::ResponseHeaderMapPtr response_headers_;
     const std::string& hostname_;
     const Http::Protocol protocol_;
     Network::ConnectionInfoProviderSharedPtr local_connection_info_provider_;
     bool expect_reset_{};
     bool reuse_connection_ = false;
-    bool request_in_flight_ = false;
   };
 
   using HttpActiveHealthCheckSessionPtr = std::unique_ptr<HttpActiveHealthCheckSession>;
@@ -353,7 +355,9 @@ private:
                        absl::string_view transport_failure_reason) override;
     void onAboveWriteBufferHighWatermark() override {}
     void onBelowWriteBufferLowWatermark() override {}
+    void onCodecClose() override { cleanupEncoder(); }
 
+    void cleanupEncoder();
     void onEvent(Network::ConnectionEvent event);
     void onGoAway(Http::GoAwayErrorCode error_code);
 

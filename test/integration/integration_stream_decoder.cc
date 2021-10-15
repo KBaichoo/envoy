@@ -24,6 +24,12 @@ namespace Envoy {
 IntegrationStreamDecoder::IntegrationStreamDecoder(Event::Dispatcher& dispatcher)
     : dispatcher_(dispatcher) {}
 
+IntegrationStreamDecoder::~IntegrationStreamDecoder() {
+  if (encoder_) {
+    encoder_->getStream().removeCallbacks(*this);
+  }
+}
+
 void IntegrationStreamDecoder::waitForContinueHeaders() {
   if (!continue_headers_.get()) {
     waiting_for_continue_headers_ = true;
@@ -136,6 +142,13 @@ void IntegrationStreamDecoder::onResetStream(Http::StreamResetReason reason, abs
   reset_reason_ = reason;
   if (waiting_for_reset_) {
     dispatcher_.exit();
+  }
+}
+
+void IntegrationStreamDecoder::onCodecClose() {
+  if (encoder_) {
+    encoder_->getStream().removeCallbacks(*this);
+    encoder_ = nullptr;
   }
 }
 

@@ -289,6 +289,13 @@ public:
    * watermark to under its low watermark.
    */
   virtual void onBelowWriteBufferLowWatermark() PURE;
+
+  /**
+   * Fires when the codec level object is being closed.
+   * Any references to the stream or codec holding the stream
+   * should be removed. Otherwise they are dangling.
+   */
+  virtual void onCodecClose(Stream& stream) PURE;
 };
 
 /**

@@ -260,6 +260,11 @@ void ConnectionManagerImpl::doDeferredStreamDestroy(ActiveStream& stream) {
 
   read_callbacks_->connection().dispatcher().deferredDelete(stream.removeFromList(streams_));
 
+  if (stream.response_encoder_) {
+    // Unsubscribe from callbacks from the encoder.
+    stream.response_encoder_->getStream().removeCallbacks(stream);
+  }
+
   if (connection_idle_timer_ && streams_.empty()) {
     connection_idle_timer_->enableTimer(config_.idleTimeout().value());
   }
@@ -1532,6 +1537,13 @@ void ConnectionManagerImpl::ActiveStream::onResetStream(StreamResetReason reset_
   }
 
   connection_manager_.doDeferredStreamDestroy(*this);
+}
+
+void ConnectionManagerImpl::ActiveStream::onCodecClose() {
+  if (response_encoder_) {
+    response_encoder_->getStream().removeCallbacks(*this);
+    response_encoder_ = nullptr;
+  }
 }
 
 void ConnectionManagerImpl::ActiveStream::onAboveWriteBufferHighWatermark() {

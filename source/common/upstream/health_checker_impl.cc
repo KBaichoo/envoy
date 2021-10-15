@@ -280,10 +280,11 @@ void HttpHealthCheckerImpl::HttpActiveHealthCheckSession::onInterval() {
     expect_reset_ = false;
     reuse_connection_ = parent_.reuse_connection_;
   }
-
-  Http::RequestEncoder* request_encoder = &client_->newStream(*this);
-  request_encoder->getStream().addCallbacks(*this);
-  request_in_flight_ = true;
+  // TODO(kbaichoo): Check whether my assumption of interval timeout > req
+  // timeout is true.
+  ASSERT(request_encoder_ == nullptr, "Did not expect an outstanding health check request");
+  request_encoder_ = &client_->newStream(*this);
+  request_encoder_->getStream().addCallbacks(*this);
 
   const auto request_headers = Http::createHeaderMap<Http::RequestHeaderMapImpl>(
       {{Http::Headers::get().Method, "GET"},
@@ -300,14 +301,21 @@ void HttpHealthCheckerImpl::HttpActiveHealthCheckSession::onInterval() {
                                          local_connection_info_provider_);
   stream_info.onUpstreamHostSelected(host_);
   parent_.request_headers_parser_->evaluateHeaders(*request_headers, stream_info);
-  auto status = request_encoder->encodeHeaders(*request_headers, true);
+  auto status = request_encoder_->encodeHeaders(*request_headers, true);
   // Encoding will only fail if required request headers are missing.
   ASSERT(status.ok());
 }
 
+void HttpHealthCheckerImpl::HttpActiveHealthCheckSession::cleanupEncoder() {
+  if (request_encoder_) {
+    request_encoder_->getStream().removeCallbacks(*this);
+    request_encoder_ = nullptr;
+  }
+}
+
 void HttpHealthCheckerImpl::HttpActiveHealthCheckSession::onResetStream(Http::StreamResetReason,
                                                                         absl::string_view) {
-  request_in_flight_ = false;
+  cleanupEncoder();
   ENVOY_CONN_LOG(debug, "connection/stream error health_flags={}", *client_,
                  HostUtility::healthFlagsToString(*host_));
   if (expect_reset_) {
@@ -333,7 +341,8 @@ void HttpHealthCheckerImpl::HttpActiveHealthCheckSession::onGoAway(
     return;
   }
 
-  if (request_in_flight_ && error_code == Http::GoAwayErrorCode::NoError) {
+  const bool request_in_flight = request_encoder_ != nullptr;
+  if (request_in_flight && error_code == Http::GoAwayErrorCode::NoError) {
     // The server is starting a graceful shutdown. Allow the in flight request
     // to finish without treating this as a health check error, and then
     // reconnect.
@@ -341,7 +350,7 @@ void HttpHealthCheckerImpl::HttpActiveHealthCheckSession::onGoAway(
     return;
   }
 
-  if (request_in_flight_) {
+  if (request_in_flight) {
     // Record this as a failed health check.
     handleFailure(envoy::data::core::v3::NETWORK);
   }
@@ -396,7 +405,7 @@ HttpHealthCheckerImpl::HttpActiveHealthCheckSession::healthCheckResult() {
 }
 
 void HttpHealthCheckerImpl::HttpActiveHealthCheckSession::onResponseComplete() {
-  request_in_flight_ = false;
+  cleanupEncoder();
 
   switch (healthCheckResult()) {
   case HealthCheckResult::Succeeded:
@@ -435,13 +444,14 @@ bool HttpHealthCheckerImpl::HttpActiveHealthCheckSession::shouldClose() const {
 }
 
 void HttpHealthCheckerImpl::HttpActiveHealthCheckSession::onTimeout() {
-  request_in_flight_ = false;
+  cleanupEncoder();
   if (client_) {
     ENVOY_CONN_LOG(debug, "connection/stream timeout health_flags={}", *client_,
                    HostUtility::healthFlagsToString(*host_));
 
-    // If there is an active request it will get reset, so make sure we ignore the reset.
-    expect_reset_ = true;
+    // Since we've cleaned up the encoder, we shouldn't get any stream callbacks
+    // (e.g. reset) by closing the client.
+    expect_reset_ = false;
 
     client_->close();
   }
@@ -767,10 +777,18 @@ void GrpcHealthCheckerImpl::GrpcActiveHealthCheckSession::onInterval() {
   request_encoder_->encodeData(*Grpc::Common::serializeToGrpcFrame(request), true);
 }
 
+void GrpcHealthCheckerImpl::GrpcActiveHealthCheckSession::cleanupEncoder() {
+  if (request_encoder_) {
+    request_encoder_->getStream().removeCallbacks(*this);
+    request_encoder_ = nullptr;
+  }
+}
+
 void GrpcHealthCheckerImpl::GrpcActiveHealthCheckSession::onResetStream(Http::StreamResetReason,
                                                                         absl::string_view) {
   const bool expected_reset = expect_reset_;
   const bool goaway = received_no_error_goaway_;
+  cleanupEncoder();
   resetState();
 
   if (expected_reset) {

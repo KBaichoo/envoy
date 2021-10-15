@@ -314,6 +314,12 @@ void UpstreamRequest::onResetStream(Http::StreamResetReason reason,
   }
 }
 
+void UpstreamRequest::onCodecClose() {
+  if (upstream_) {
+    clearRequestEncoder();
+  }
+}
+
 void UpstreamRequest::resetStream() {
   // Don't reset the stream if we're already done with it.
   if (encode_complete_ && decode_complete_) {

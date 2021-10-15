@@ -43,6 +43,8 @@ public:
     while (read_disable_calls_ != 0) {
       StreamEncoderImpl::readDisable(false);
     }
+
+    notifyObserversToDetach();
   }
   // Http::StreamEncoder
   void encodeData(Buffer::Instance& data, bool end_stream) override;
