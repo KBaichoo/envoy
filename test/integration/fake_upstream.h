@@ -227,7 +227,7 @@ public:
                      absl::string_view transport_failure_reason) override;
   void onAboveWriteBufferHighWatermark() override {}
   void onBelowWriteBufferLowWatermark() override {}
-  void onCodecClose() override;
+  void onCloseCodecStream() override { encoder_ = nullptr; }
 
   virtual void setEndStream(bool end) ABSL_EXCLUSIVE_LOCKS_REQUIRED(lock_) { end_stream_ = end; }
 

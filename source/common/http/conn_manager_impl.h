@@ -182,7 +182,7 @@ private:
                        absl::string_view transport_failure_reason) override;
     void onAboveWriteBufferHighWatermark() override;
     void onBelowWriteBufferLowWatermark() override;
-    void onCodecClose() override;
+    void onCloseCodecStream() override { response_encoder_ = nullptr; }
 
     // Http::StreamDecoder
     void decodeData(Buffer::Instance& data, bool end_stream) override;
@@ -367,6 +367,9 @@ private:
     Router::ConfigConstSharedPtr snapped_route_config_;
     Router::ScopedConfigConstSharedPtr snapped_scoped_routes_config_;
     Tracing::SpanPtr active_span_;
+    // Whether ResetAllStreams is invoked. This is good to know to avoid
+    // removing callbacks from the underlying stream twice.
+    bool reset_all_streams_{false};
     ResponseEncoder* response_encoder_{};
     Stats::TimespanPtr request_response_timespan_;
     // Per-stream idle timeout. This timer gets reset whenever activity occurs on the stream, and,

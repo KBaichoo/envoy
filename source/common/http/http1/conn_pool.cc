@@ -71,9 +71,9 @@ void ActiveClient::StreamWrapper::onResetStream(StreamResetReason, absl::string_
   parent_.codec_client_->close();
 }
 
-void ActiveClient::StreamWrapper::onCodecClose() {
-  // Remove as listener of the codecs callbacks.
-  ResponseEncoderWrapper::inner_.getStream().removeCallbacks(*this);
+void ActiveClient::StreamWrapper::onCloseCodecStream() {
+  // TODO(kbaichoo): turn ResponseEncoderWrapper::inner_ into nullptr or
+  // guard this somehow?
 }
 
 ActiveClient::ActiveClient(HttpConnPoolImplBase& parent)

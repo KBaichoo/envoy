@@ -228,6 +228,7 @@ public:
         .WillOnce(Invoke([&request_decoder, &stream_callbacks](Http::ResponseEncoder& encoder,
                                                                bool) -> Http::RequestDecoder& {
           encoder.getStream().addCallbacks(stream_callbacks);
+          stream_callbacks.setStream(encoder.getStream());
           return request_decoder;
         }));
     quic::QuicStreamId stream_id = 4u;
@@ -361,6 +362,7 @@ TEST_F(EnvoyQuicServerSessionTest, OnResetFrameIetfQuic) {
                                 quic::QUIC_ERROR_PROCESSING_STREAM, /*bytes_written=*/0u);
   envoy_quic_session_.OnRstStream(rst1);
   Http::TestResponseHeaderMapImpl response_headers{{":status", "200"}};
+  EXPECT_CALL(stream_callbacks, onCloseCodecStream());
   stream1->encodeHeaders(response_headers, true);
 
   EXPECT_EQ(1U, TestUtility::findCounter(
@@ -372,6 +374,7 @@ TEST_F(EnvoyQuicServerSessionTest, OnResetFrameIetfQuic) {
       .WillOnce(Invoke([&request_decoder, &stream_callbacks](Http::ResponseEncoder& encoder,
                                                              bool) -> Http::RequestDecoder& {
         encoder.getStream().addCallbacks(stream_callbacks);
+        stream_callbacks.setStream(encoder.getStream());
         return request_decoder;
       }));
   quic::QuicStream* stream2 = envoy_quic_session_.GetOrCreateStream(stream1->id() + 4u);
@@ -388,6 +391,7 @@ TEST_F(EnvoyQuicServerSessionTest, OnResetFrameIetfQuic) {
         EXPECT_EQ(quic::QUIC_REFUSED_STREAM, frame.rst_stream_frame->error_code);
         return false;
       }));
+  EXPECT_CALL(stream_callbacks, onCloseCodecStream());
   envoy_quic_session_.OnStopSendingFrame(stop_sending2);
   envoy_quic_session_.OnRstStream(rst2);
   EXPECT_EQ(1U, TestUtility::findCounter(
@@ -395,10 +399,12 @@ TEST_F(EnvoyQuicServerSessionTest, OnResetFrameIetfQuic) {
                     "http3.downstream.rx.quic_reset_stream_error_code_QUIC_REFUSED_STREAM")
                     ->value());
 
+  Http::MockStreamCallbacks stream_callbacks3;
   EXPECT_CALL(http_connection_callbacks_, newStream(_, false))
-      .WillOnce(Invoke([&request_decoder, &stream_callbacks](Http::ResponseEncoder& encoder,
-                                                             bool) -> Http::RequestDecoder& {
-        encoder.getStream().addCallbacks(stream_callbacks);
+      .WillOnce(Invoke([&request_decoder, &stream_callbacks3](Http::ResponseEncoder& encoder,
+                                                              bool) -> Http::RequestDecoder& {
+        encoder.getStream().addCallbacks(stream_callbacks3);
+        stream_callbacks3.setStream(encoder.getStream());
         return request_decoder;
       }));
   quic::QuicStream* stream3 = envoy_quic_session_.GetOrCreateStream(stream1->id() + 8u);
@@ -406,8 +412,13 @@ TEST_F(EnvoyQuicServerSessionTest, OnResetFrameIetfQuic) {
                                 /*bytes_written=*/0u);
   quic::QuicStopSendingFrame stop_sending3(/*control_frame_id=*/1u, stream3->id(),
                                            quic::QUIC_REFUSED_STREAM);
+  // So I think we end up not closing the codec, and don't do the reset.
   // Receiving both STOP_SENDING and RESET_STREAM should close the stream.
-  EXPECT_CALL(stream_callbacks,
+  // TODO(kbaichoo): likewise with this case, figure out why below is not being
+  // invoked.
+  // So I think the counter is getting updated... but the callback isn't
+  // firing..
+  EXPECT_CALL(stream_callbacks3,
               onResetStream(Http::StreamResetReason::RemoteRefusedStreamReset, _));
   envoy_quic_session_.OnRstStream(rst3);
   envoy_quic_session_.OnStopSendingFrame(stop_sending3);
@@ -674,6 +685,7 @@ TEST_F(EnvoyQuicServerSessionTest, FlushCloseNoTimeout) {
   EXPECT_CALL(*quic_connection_, SendControlFrame(_))
       .Times(testing::AtMost(1))
       .WillOnce(Invoke([](const quic::QuicFrame&) { return false; }));
+  EXPECT_CALL(stream_callbacks, onCloseCodecStream());
   envoy_quic_session_.close(Network::ConnectionCloseType::NoFlush);
 }
 
@@ -870,6 +882,7 @@ TEST_F(EnvoyQuicServerSessionTest, SendBufferWatermark) {
       .WillOnce(Invoke([&request_decoder, &stream_callbacks](Http::ResponseEncoder& encoder,
                                                              bool) -> Http::RequestDecoder& {
         encoder.getStream().addCallbacks(stream_callbacks);
+        stream_callbacks.setStream(encoder.getStream());
         return request_decoder;
       }));
   quic::QuicStreamId stream_id = 4u;
@@ -913,6 +926,7 @@ TEST_F(EnvoyQuicServerSessionTest, SendBufferWatermark) {
       .WillOnce(Invoke([&request_decoder2, &stream_callbacks2](Http::ResponseEncoder& encoder,
                                                                bool) -> Http::RequestDecoder& {
         encoder.getStream().addCallbacks(stream_callbacks2);
+        stream_callbacks2.setStream(encoder.getStream());
         return request_decoder2;
       }));
   auto stream2 =
@@ -943,6 +957,7 @@ TEST_F(EnvoyQuicServerSessionTest, SendBufferWatermark) {
       .WillOnce(Invoke([&request_decoder3, &stream_callbacks3](Http::ResponseEncoder& encoder,
                                                                bool) -> Http::RequestDecoder& {
         encoder.getStream().addCallbacks(stream_callbacks3);
+        stream_callbacks3.setStream(encoder.getStream());
         return request_decoder3;
       }));
   EXPECT_CALL(stream_callbacks3, onAboveWriteBufferHighWatermark());
@@ -961,12 +976,14 @@ TEST_F(EnvoyQuicServerSessionTest, SendBufferWatermark) {
   quic::QuicWindowUpdateFrame window_update1(quic::kInvalidControlFrameId, stream1->id(),
                                              32 * 1024);
   stream1->OnWindowUpdateFrame(window_update1);
-  EXPECT_CALL(stream_callbacks, onBelowWriteBufferLowWatermark()).WillOnce(Invoke([stream1]() {
-    // Write rest response to stream1.
-    std::string rest_response(1, 'a');
-    Buffer::OwnedImpl buffer(rest_response);
-    stream1->encodeData(buffer, true);
-  }));
+  EXPECT_CALL(stream_callbacks, onBelowWriteBufferLowWatermark())
+      .WillOnce(Invoke([stream1, &stream_callbacks]() {
+        // Write rest response to stream1.
+        std::string rest_response(1, 'a');
+        Buffer::OwnedImpl buffer(rest_response);
+        EXPECT_CALL(stream_callbacks, onCloseCodecStream());
+        stream1->encodeData(buffer, true);
+      }));
   envoy_quic_session_.OnCanWrite();
   EXPECT_TRUE(stream1->IsFlowControlBlocked());
 
@@ -988,19 +1005,24 @@ TEST_F(EnvoyQuicServerSessionTest, SendBufferWatermark) {
         // end of stream.
         http_connection_->onUnderlyingConnectionBelowWriteBufferLowWatermark();
       }));
-  EXPECT_CALL(stream_callbacks3, onBelowWriteBufferLowWatermark()).WillOnce(Invoke([=]() {
-    std::string super_large_response(40 * 1024, 'a');
-    Buffer::OwnedImpl buffer(super_large_response);
-    // This call will buffer 24k on stream3, raise the buffered bytes above
-    // high watermarks of the stream and connection.
-    // But callback will not propagate to stream_callback3 as the steam is
-    // ended locally.
-    stream3->encodeData(buffer, true);
-  }));
+  EXPECT_CALL(stream_callbacks3, onBelowWriteBufferLowWatermark())
+      .WillOnce(Invoke([=, &stream_callbacks3]() {
+        std::string super_large_response(40 * 1024, 'a');
+        Buffer::OwnedImpl buffer(super_large_response);
+        // This call will buffer 24k on stream3, raise the buffered bytes above
+        // high watermarks of the stream and connection.
+        // But callback will not propagate to stream_callback3 as the steam is
+        // ended locally.
+        EXPECT_CALL(stream_callbacks3, onCloseCodecStream());
+        stream3->encodeData(buffer, true);
+      }));
   EXPECT_CALL(network_connection_callbacks_, onAboveWriteBufferHighWatermark());
   envoy_quic_session_.OnCanWrite();
   EXPECT_TRUE(stream2->IsFlowControlBlocked());
 
+  // TODO(kbaichoo): run through this with Dan. It doesn't seem that we end up
+  // destroying / onCodecClosing the codec level stream... though
+  // encodeData(buffer, true) could lead one to believe so.
   // Resetting stream3 should lower the buffered bytes, but callbacks will not
   // be triggered because end stream is already encoded.
   EXPECT_CALL(stream_callbacks3, onResetStream(Http::StreamResetReason::LocalReset, "")).Times(0);
@@ -1015,6 +1037,7 @@ TEST_F(EnvoyQuicServerSessionTest, SendBufferWatermark) {
   // Update flow control window for stream2.
   quic::QuicWindowUpdateFrame window_update4(quic::kInvalidControlFrameId, stream2->id(),
                                              48 * 1024);
+  EXPECT_CALL(stream_callbacks2, onCloseCodecStream());
   stream2->OnWindowUpdateFrame(window_update4);
   envoy_quic_session_.OnCanWrite();
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -30,7 +29,11 @@ namespace Envoy {
 class BufferingStreamDecoder : public Http::ResponseDecoder, public Http::StreamCallbacks {
 public:
   BufferingStreamDecoder(std::function<void()> on_complete_cb) : on_complete_cb_(on_complete_cb) {}
-  ~BufferingStreamDecoder() { cleanupEncoder(); }
+  ~BufferingStreamDecoder() {
+    if (encoder_) {
+      encoder_->getStream().removeCallbacks(*this);
+    }
+  }
 
   bool complete() { return complete_; }
   const Http::ResponseHeaderMap& headers() { return *headers_; }
@@ -55,18 +58,12 @@ public:
   // Http::StreamCallbacks
   void onResetStream(Http::StreamResetReason reason,
                      absl::string_view transport_failure_reason) override;
-  void onCodecClose() override { cleanupEncoder(); }
+  void onCloseCodecStream() override { encoder_ = nullptr; }
   void onAboveWriteBufferHighWatermark() override {}
   void onBelowWriteBufferLowWatermark() override {}
 
 private:
   void onComplete();
-  void cleanupEncoder() {
-    if (encoder_) {
-      encoder_->getStream().removeCallbacks(*this);
-      encoder_ = nullptr;
-    }
-  }
 
   Http::RequestEncoder* encoder_{nullptr};
   Http::ResponseHeaderMapPtr headers_;

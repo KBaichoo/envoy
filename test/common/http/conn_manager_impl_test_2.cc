@@ -150,6 +150,7 @@ TEST_F(HttpConnectionManagerImplTest, DownstreamProtocolError) {
     return codecProtocolError("protocol error");
   }));
 
+  // TODO(kbaichoo): why called twice?
   EXPECT_CALL(response_encoder_.stream_, removeCallbacks(_));
   EXPECT_CALL(filter_factory_, createFilterChain(_)).Times(0);
 
@@ -1117,6 +1118,8 @@ TEST_F(HttpConnectionManagerImplTest, UpstreamWatermarkCallbacks) {
   EXPECT_CALL(*encoder_filters_[1], encodeComplete());
   EXPECT_CALL(response_encoder_, encodeHeaders(_, true));
   expectOnDestroy();
+  // For removing stream callback from encoding the headers.
+  EXPECT_CALL(response_encoder_, getStream()).WillOnce(ReturnRef(stream_));
   decoder_filters_[1]->callbacks_->streamInfo().setResponseCodeDetails("");
   decoder_filters_[1]->callbacks_->encodeHeaders(
       ResponseHeaderMapPtr{new TestResponseHeaderMapImpl{{":status", "200"}}}, true, "details");
@@ -1469,17 +1472,22 @@ TEST_F(HttpConnectionManagerImplTest, HitResponseBufferLimitsAfterHeaders) {
   const std::string data = "A long enough string to go over watermarks";
   Buffer::OwnedImpl fake_response(data);
   InSequence s;
-  EXPECT_CALL(stream_, removeCallbacks(_));
-  expectOnDestroy(false);
   EXPECT_CALL(*encoder_filters_[1], encodeData(_, false))
       .WillOnce(Return(FilterDataStatus::StopIterationAndBuffer));
   EXPECT_CALL(stream_, resetStream(_));
-  filter_callbacks_.connection_.raiseEvent(Network::ConnectionEvent::LocalClose);
   EXPECT_LOG_CONTAINS(
       "debug",
       "Resetting stream due to response_payload_too_large. Prior headers have already been sent",
       decoder_filters_[0]->callbacks_->encodeData(fake_response, false););
   EXPECT_EQ(1U, stats_.named_.rs_too_large_.value());
+
+  // We should raise the close after the the local reply. This will cause the
+  // destroy of the connection and underlying streams. If we were to flip the
+  // order of these, we'd incorrectly attempt to encodeData on a stream that's
+  // already reset, and therefore destroyed, which isn't how this works in prod.
+  EXPECT_CALL(stream_, removeCallbacks(_));
+  expectOnDestroy(false);
+  filter_callbacks_.connection_.raiseEvent(Network::ConnectionEvent::LocalClose);
 }
 
 TEST_F(HttpConnectionManagerImplTest, FilterHeadReply) {

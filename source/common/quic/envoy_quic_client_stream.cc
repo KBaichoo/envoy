@@ -288,8 +288,13 @@ void EnvoyQuicClientStream::maybeDecodeTrailers() {
 void EnvoyQuicClientStream::OnStreamReset(const quic::QuicRstStreamFrame& frame) {
   ENVOY_STREAM_LOG(debug, "received reset code={}", *this, frame.error_code);
   stats_.rx_reset_.inc();
-  quic::QuicSpdyClientStream::OnStreamReset(frame);
+  // TODO(kbaichoo): consult wth Dan on this. We end up destroying the codec
+  // level stream when we can into the quic OnStreamReset, but before we start
+  // invoking the runResetCallbacks. As such I think we'd want to invoke the
+  // onResetStreamCallbacks vs onCodecStreamClose which OnStreamReset will end
+  // up invoking.
   runResetCallbacks(quicRstErrorToEnvoyRemoteResetReason(frame.error_code));
+  quic::QuicSpdyClientStream::OnStreamReset(frame);
 }
 
 void EnvoyQuicClientStream::ResetWithError(quic::QuicResetStreamError error) {

@@ -115,7 +115,7 @@ private:
                        absl::string_view transport_failure_reason) override;
     void onAboveWriteBufferHighWatermark() override {}
     void onBelowWriteBufferLowWatermark() override {}
-    void onCodecClose() override { cleanupEncoder(); }
+    void onCloseCodecStream() override { cleanupEncoder(); }
 
     void cleanupEncoder();
     void onEvent(Network::ConnectionEvent event);
@@ -355,7 +355,7 @@ private:
                        absl::string_view transport_failure_reason) override;
     void onAboveWriteBufferHighWatermark() override {}
     void onBelowWriteBufferLowWatermark() override {}
-    void onCodecClose() override { cleanupEncoder(); }
+    void onCloseCodecStream() override { cleanupEncoder(); }
 
     void cleanupEncoder();
     void onEvent(Network::ConnectionEvent event);

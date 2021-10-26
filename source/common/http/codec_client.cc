@@ -65,7 +65,10 @@ void CodecClient::connect() {
 void CodecClient::close() { connection_->close(Network::ConnectionCloseType::NoFlush); }
 
 void CodecClient::deleteRequest(ActiveRequest& request) {
-  request.cleanupEncoder();
+  if (request.encoder_) {
+    request.encoder_->getStream().removeCallbacks(request);
+    request.encoder_ = nullptr;
+  }
 
   connection_->dispatcher().deferredDelete(request.removeFromList(active_requests_));
   if (codec_client_callbacks_) {

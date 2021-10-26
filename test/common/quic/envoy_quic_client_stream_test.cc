@@ -59,7 +59,9 @@ public:
                                                       POOL_GAUGE_PREFIX(scope_, "http3."))}),
         quic_stream_(new EnvoyQuicClientStream(stream_id_, &quic_session_, quic::BIDIRECTIONAL,
                                                stats_, http3_options_)),
-        request_headers_{{":authority", host_}, {":method", "POST"}, {":path", "/"}},
+        stream_callbacks_(*quic_stream_), request_headers_{{":authority", host_},
+                                                           {":method", "POST"},
+                                                           {":path", "/"}},
         request_trailers_{{"trailer-key", "trailer-value"}} {
     SetQuicReloadableFlag(quic_single_ack_in_packet2, false);
     quic_stream_->setResponseDecoder(stream_decoder_);
@@ -161,6 +163,7 @@ TEST_F(EnvoyQuicClientStreamTest, GetRequestAndHeaderOnlyResponse) {
         EXPECT_EQ("200", headers->getStatusValue());
       }));
   EXPECT_CALL(stream_decoder_, decodeData(BufferStringEqual(""), /*end_stream=*/true));
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   std::string payload = spdyHeaderToHttp3StreamPayload(spdy_response_headers_);
   quic::QuicStreamFrame frame(stream_id_, true, 0, payload);
   quic_stream_->OnStreamFrame(frame);
@@ -188,6 +191,7 @@ TEST_F(EnvoyQuicClientStreamTest, PostRequestAndResponse) {
         EXPECT_EQ(more_response_body, buffer.toString());
         EXPECT_EQ(false, finished_reading);
       }));
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   std::string payload = absl::StrCat(bodyToHttp3StreamPayload(more_response_body),
                                      spdyHeaderToHttp3StreamPayload(spdy_trailers_));
   quic::QuicStreamFrame frame(stream_id_, true, offset, payload);
@@ -223,6 +227,7 @@ TEST_F(EnvoyQuicClientStreamTest, PostRequestAnd100Continue) {
     offset += data.length();
   }
 
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   receiveResponse(response_body_, true, offset);
 }
 
@@ -411,6 +416,7 @@ TEST_F(EnvoyQuicClientStreamTest, CloseConnectionDuringDecodingDataWithEndStream
             quic::QUIC_NO_ERROR, "Closed in decodeDdata",
             quic::ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
       }));
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   std::string data = absl::StrCat(spdyHeaderToHttp3StreamPayload(spdy_response_headers_),
                                   bodyToHttp3StreamPayload(response_body_));
   quic::QuicStreamFrame frame(stream_id_, true, 0, data);
@@ -451,6 +457,7 @@ TEST_F(EnvoyQuicClientStreamTest, CloseConnectionDuringDecodingTrailer) {
             quic::QUIC_NO_ERROR, "Closed in decodeTrailers",
             quic::ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
       }));
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   std::string payload = spdyHeaderToHttp3StreamPayload(spdy_trailers_);
   quic::QuicStreamFrame frame(stream_id_, true, offset, payload);
   quic_stream_->OnStreamFrame(frame);
@@ -477,12 +484,12 @@ TEST_F(EnvoyQuicClientStreamTest, ReadDisabledBeforeClose) {
         quic_stream_->readDisable(true);
       }));
   EXPECT_CALL(stream_decoder_, decodeData(BufferStringEqual(""), /*end_stream=*/true));
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   std::string payload = spdyHeaderToHttp3StreamPayload(spdy_response_headers_);
   quic::QuicStreamFrame frame(stream_id_, true, 0, payload);
   quic_stream_->OnStreamFrame(frame);
 
   // Reset to close the stream.
-  EXPECT_CALL(stream_callbacks_, onResetStream(Http::StreamResetReason::LocalReset, _));
   quic_stream_->resetStream(Http::StreamResetReason::LocalReset);
   EXPECT_EQ(1u, quic_session_.closed_streams()->size());
   quic_session_.closed_streams()->clear();

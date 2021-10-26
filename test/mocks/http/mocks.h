@@ -129,13 +129,18 @@ public:
 class MockStreamCallbacks : public StreamCallbacks {
 public:
   MockStreamCallbacks();
+  MockStreamCallbacks(Http::Stream& stream);
   ~MockStreamCallbacks() override;
 
   // Http::StreamCallbacks
   MOCK_METHOD(void, onResetStream, (StreamResetReason reason, absl::string_view));
   MOCK_METHOD(void, onAboveWriteBufferHighWatermark, ());
   MOCK_METHOD(void, onBelowWriteBufferLowWatermark, ());
-  MOCK_METHOD(void, onCodecClose, (Stream&));
+  MOCK_METHOD(void, onCloseCodecStream, ());
+
+  void setStream(Http::Stream& stream);
+
+  Http::Stream* stream_{nullptr};
 };
 
 class MockServerConnection : public ServerConnection {

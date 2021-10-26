@@ -144,7 +144,7 @@ TEST_F(CodecClientTest, DisconnectBeforeHeaders) {
 
   Http::MockResponseDecoder outer_decoder;
   Http::StreamEncoder& request_encoder = client_->newStream(outer_decoder);
-  Http::MockStreamCallbacks callbacks;
+  Http::MockStreamCallbacks callbacks(request_encoder.getStream());
   request_encoder.getStream().addCallbacks(callbacks);
 
   // When we get a remote close with an active request we should try to send zero bytes through
@@ -167,7 +167,7 @@ TEST_F(CodecClientTest, IdleTimerWithNoActiveRequests) {
 
   Http::MockResponseDecoder outer_decoder;
   Http::StreamEncoder& request_encoder = client_->newStream(outer_decoder);
-  Http::MockStreamCallbacks callbacks;
+  Http::MockStreamCallbacks callbacks(request_encoder.getStream());
   request_encoder.getStream().addCallbacks(callbacks);
   connection_cb_->onEvent(Network::ConnectionEvent::Connected);
 
@@ -200,7 +200,7 @@ TEST_F(CodecClientTest, IdleTimerClientRemoteCloseWithActiveRequests) {
 
   Http::MockResponseDecoder outer_decoder;
   Http::StreamEncoder& request_encoder = client_->newStream(outer_decoder);
-  Http::MockStreamCallbacks callbacks;
+  Http::MockStreamCallbacks callbacks(request_encoder.getStream());
   request_encoder.getStream().addCallbacks(callbacks);
 
   // When we get a remote close with an active request validate idleTimer is reset after client
@@ -225,7 +225,7 @@ TEST_F(CodecClientTest, IdleTimerClientLocalCloseWithActiveRequests) {
 
   Http::MockResponseDecoder outer_decoder;
   Http::StreamEncoder& request_encoder = client_->newStream(outer_decoder);
-  Http::MockStreamCallbacks callbacks;
+  Http::MockStreamCallbacks callbacks(request_encoder.getStream());
   request_encoder.getStream().addCallbacks(callbacks);
 
   // When we get a local close with an active request validate idleTimer is reset after client close

@@ -120,10 +120,11 @@ public:
   }
 
   EnvoyQuicClientStream& sendGetRequest(Http::ResponseDecoder& response_decoder,
-                                        Http::StreamCallbacks& stream_callbacks) {
+                                        Http::MockStreamCallbacks& stream_callbacks) {
     auto& stream =
         dynamic_cast<EnvoyQuicClientStream&>(http_connection_.newStream(response_decoder));
     stream.getStream().addCallbacks(stream_callbacks);
+    stream_callbacks.setStream(stream.getStream());
 
     std::string host("www.abc.com");
     Http::TestRequestHeaderMapImpl request_headers{
@@ -175,6 +176,7 @@ TEST_F(EnvoyQuicClientSessionTest, NewStream) {
       .WillOnce(Invoke([](const Http::ResponseHeaderMapPtr& decoded_headers, bool) {
         EXPECT_EQ("200", decoded_headers->getStatusValue());
       }));
+  EXPECT_CALL(stream_callbacks, onCloseCodecStream());
   stream.OnStreamHeaderList(/*fin=*/true, headers.uncompressed_header_bytes(), headers);
 }
 
@@ -227,6 +229,8 @@ TEST_F(EnvoyQuicClientSessionTest, OnResetFrame) {
   quic::QuicRstStreamFrame rst1(/*control_frame_id=*/1u, stream_id,
                                 quic::QUIC_ERROR_PROCESSING_STREAM, /*bytes_written=*/0u);
   EXPECT_CALL(stream_callbacks, onResetStream(Http::StreamResetReason::RemoteReset, _));
+  // Hmm. This should be handled by the stream_callbacks onResetStream??
+  // EXPECT_CALL(stream_callbacks, onCloseCodecStream());
   envoy_quic_session_.OnRstStream(rst1);
 
   EXPECT_EQ(

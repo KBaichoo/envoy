@@ -119,12 +119,17 @@ void EnvoyQuicServerStream::resetStream(Http::StreamResetReason reason) {
     buffer_memory_account_->clearDownstream();
   }
 
+  // TODO(kbaichoo): consult with Dan on this, seems weird that originally only
+  // under one path did we run the resetCallbacks..
+  // It's possible that when we do the QUICHE level reset this will close the
+  // codec before the reset callbacks...
+
   if (local_end_stream_ && !reading_stopped()) {
     // This is after 200 early response. Reset with QUIC_STREAM_NO_ERROR instead
     // of propagating original reset reason. In QUICHE if a stream stops reading
     // before FIN or RESET received, it resets the steam with QUIC_STREAM_NO_ERROR.
-    StopReading();
     runResetCallbacks(Http::StreamResetReason::LocalReset);
+    StopReading();
   } else {
     Reset(envoyResetReasonToQuicRstError(reason));
   }
@@ -297,14 +302,16 @@ void EnvoyQuicServerStream::OnStreamReset(const quic::QuicRstStreamFrame& frame)
   ENVOY_STREAM_LOG(debug, "received RESET_STREAM with reset code={}", *this, frame.error_code);
   stats_.rx_reset_.inc();
   bool end_stream_decoded_and_encoded = read_side_closed() && local_end_stream_;
+  // TODO(kbaichoo): consult Dan on this.
   // This closes read side in IETF Quic, but doesn't close write side.
-  quic::QuicSpdyServerStreamBase::OnStreamReset(frame);
-  ASSERT(read_side_closed());
+  // TODO(kbaichoo): the logic below seems wrong / disagrees with comment, f
   if (write_side_closed() && !end_stream_decoded_and_encoded) {
     // If both directions are closed but upstream hasn't received or sent end stream, run reset
     // stream callback.
     runResetCallbacks(quicRstErrorToEnvoyRemoteResetReason(frame.error_code));
   }
+  quic::QuicSpdyServerStreamBase::OnStreamReset(frame);
+  ASSERT(read_side_closed());
 }
 
 void EnvoyQuicServerStream::ResetWithError(quic::QuicResetStreamError error) {

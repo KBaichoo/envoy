@@ -23,19 +23,24 @@ public:
   MOCK_METHOD(void, setFlushTimeout, (std::chrono::milliseconds timeout));
   MOCK_METHOD(void, setAccount, (Buffer::BufferMemoryAccountSharedPtr));
 
-  std::list<StreamCallbacks*> callbacks_{};
+  // Use same underlying structure e.g. to insure iteration stability.
+  absl::InlinedVector<StreamCallbacks*, 8> callbacks_;
   Network::Address::InstanceConstSharedPtr connection_local_address_;
   Buffer::BufferMemoryAccountSharedPtr account_;
 
   void runHighWatermarkCallbacks() {
     for (auto* callback : callbacks_) {
-      callback->onAboveWriteBufferHighWatermark();
+      if (callback) {
+        callback->onAboveWriteBufferHighWatermark();
+      }
     }
   }
 
   void runLowWatermarkCallbacks() {
     for (auto* callback : callbacks_) {
-      callback->onBelowWriteBufferLowWatermark();
+      if (callback) {
+        callback->onBelowWriteBufferLowWatermark();
+      }
     }
   }
 };

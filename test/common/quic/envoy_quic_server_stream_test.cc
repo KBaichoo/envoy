@@ -61,7 +61,8 @@ public:
         quic_stream_(new EnvoyQuicServerStream(
             stream_id_, &quic_session_, quic::BIDIRECTIONAL, stats_, http3_options_,
             envoy::config::core::v3::HttpProtocolOptions::ALLOW)),
-        response_headers_{{":status", "200"}, {"response-key", "response-value"}},
+        stream_callbacks_(*quic_stream_), response_headers_{{":status", "200"},
+                                                            {"response-key", "response-value"}},
         response_trailers_{{"trailer-key", "trailer-value"}} {
     quic_stream_->setRequestDecoder(stream_decoder_);
     quic_stream_->addCallbacks(stream_callbacks_);
@@ -191,12 +192,14 @@ TEST_F(EnvoyQuicServerStreamTest, GetRequestAndResponse) {
   quic::QuicStreamFrame frame(stream_id_, true, 0, payload);
   quic_stream_->OnStreamFrame(frame);
   EXPECT_TRUE(quic_stream_->FinishedReadingHeaders());
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   quic_stream_->encodeHeaders(response_headers_, /*end_stream=*/true);
 }
 
 TEST_F(EnvoyQuicServerStreamTest, PostRequestAndResponse) {
   EXPECT_EQ(absl::nullopt, quic_stream_->http1StreamEncoderOptions());
   receiveRequest(request_body_, true, request_body_.size() * 2);
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   quic_stream_->encodeHeaders(response_headers_, /*end_stream=*/false);
   quic_stream_->encodeTrailers(response_trailers_);
 }
@@ -418,6 +421,7 @@ TEST_F(EnvoyQuicServerStreamTest, WatermarkSendBuffer) {
     Buffer::OwnedImpl buffer(rest_response);
     quic_stream_->encodeData(buffer, true);
   }));
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
   quic_session_.OnCanWrite();
   EXPECT_TRUE(quic_stream_->IsFlowControlBlocked());
 
@@ -430,7 +434,7 @@ TEST_F(EnvoyQuicServerStreamTest, WatermarkSendBuffer) {
   EXPECT_TRUE(quic_stream_->write_side_closed());
 }
 
-TEST_F(EnvoyQuicServerStreamTest, HeadersContributeToWatermarkIquic) {
+TEST_F(EnvoyQuicServerStreamTest, HeadersContributeToWatermarkForquic) {
   receiveRequest(request_body_, true, request_body_.size() * 2);
 
   // Bump connection flow control window large enough not to cause connection level flow control
@@ -496,6 +500,9 @@ TEST_F(EnvoyQuicServerStreamTest, HeadersContributeToWatermarkIquic) {
   // Buffering more trailers will cause stream to reach high watermark, but
   // because trailers closes the stream, no callback should be triggered.
   quic_stream_->encodeTrailers(response_trailers_);
+
+  // During teardown, the codec stream will be destroyed as part of teardown.
+  EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
 }
 
 TEST_F(EnvoyQuicServerStreamTest, RequestHeaderTooLarge) {
@@ -591,6 +598,7 @@ TEST_F(EnvoyQuicServerStreamTest, ConnectionCloseAfterEndStreamEncoded) {
       .WillOnce(
           Invoke([this](quic::QuicStreamId, size_t, quic::QuicStreamOffset,
                         quic::StreamSendingState, bool, absl::optional<quic::EncryptionLevel>) {
+            EXPECT_CALL(stream_callbacks_, onCloseCodecStream());
             quic_connection_.CloseConnection(
                 quic::QUIC_INTERNAL_ERROR, "Closed in WriteHeaders",
                 quic::ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);

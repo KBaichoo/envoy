@@ -613,7 +613,7 @@ TEST_F(Http1ConnPoolImplTest, DisconnectWhileBound) {
   conn_pool_->test_clients_[0].connection_->raiseEvent(Network::ConnectionEvent::Connected);
 
   // We should get a reset callback when the connection disconnects.
-  Http::MockStreamCallbacks stream_callbacks;
+  Http::MockStreamCallbacks stream_callbacks(request_encoder.getStream());
   EXPECT_CALL(stream_callbacks, onResetStream(StreamResetReason::ConnectionTermination, _));
   request_encoder.getStream().addCallbacks(stream_callbacks);
 

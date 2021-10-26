@@ -145,11 +145,4 @@ void IntegrationStreamDecoder::onResetStream(Http::StreamResetReason reason, abs
   }
 }
 
-void IntegrationStreamDecoder::onCodecClose() {
-  if (encoder_) {
-    encoder_->getStream().removeCallbacks(*this);
-    encoder_ = nullptr;
-  }
-}
-
 } // namespace Envoy

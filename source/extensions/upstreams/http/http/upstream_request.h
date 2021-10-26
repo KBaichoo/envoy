@@ -64,7 +64,7 @@ public:
 
   ~HttpUpstream() {
     if (request_encoder_) {
-      request_encoder_->getStream.removeCallbacks(*this);
+      request_encoder_->getStream().removeCallbacks(*this);
     }
   }
 
@@ -108,13 +108,10 @@ public:
     upstream_request_.onBelowWriteBufferLowWatermark();
   }
 
-  void onCodecClose() override {
-    if (request_encoder_) {
-      request_encoder_->getStream.removeCallbacks(*this);
-      // Forward information to the upstream request.
-      upstream_request_.onCodecClose();
-      request_encoder_ = nullptr;
-    }
+  void onCloseCodecStream() override {
+    // Forward information to the upstream request.
+    upstream_request_.onCloseCodecStream();
+    request_encoder_ = nullptr;
   }
 
 private:

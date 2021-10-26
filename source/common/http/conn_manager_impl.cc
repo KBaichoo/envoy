@@ -238,6 +238,7 @@ void ConnectionManagerImpl::doEndStream(ActiveStream& stream) {
 }
 
 void ConnectionManagerImpl::doDeferredStreamDestroy(ActiveStream& stream) {
+  std::cerr << "doDeferredStreamDestroy for stream: " << &stream << std::endl;
   if (stream.max_stream_duration_timer_) {
     stream.max_stream_duration_timer_->disableTimer();
     stream.max_stream_duration_timer_ = nullptr;
@@ -260,10 +261,18 @@ void ConnectionManagerImpl::doDeferredStreamDestroy(ActiveStream& stream) {
 
   read_callbacks_->connection().dispatcher().deferredDelete(stream.removeFromList(streams_));
 
-  if (stream.response_encoder_) {
-    // Unsubscribe from callbacks from the encoder.
+  // Without reset_all_stream, we invoke twice unnecessarily...
+  // if (stream.response_encoder_) {
+  //// Unsubscribe from callbacks from the encoder.
+  // stream.response_encoder_->getStream().removeCallbacks(stream);
+  // stream.response_encoder_ = nullptr;
+  //}
+
+  // With using reset all streams
+  if (!stream.reset_all_streams_ && stream.response_encoder_) {
     stream.response_encoder_->getStream().removeCallbacks(stream);
   }
+  stream.response_encoder_ = nullptr;
 
   if (connection_idle_timer_ && streams_.empty()) {
     connection_idle_timer_->enableTimer(config_.idleTimeout().value());
@@ -417,6 +426,7 @@ void ConnectionManagerImpl::resetAllStreams(absl::optional<StreamInfo::ResponseF
     // been terminated via GOAWAY. It might be possible to do something better here inside the h2
     // codec but there are no easy answers and this seems simpler.
     auto& stream = *streams_.front();
+    stream.reset_all_streams_ = true;
     stream.response_encoder_->getStream().removeCallbacks(stream);
     if (!stream.response_encoder_->getStream().responseDetails().empty()) {
       stream.filter_manager_.streamInfo().setResponseCodeDetails(
@@ -427,6 +437,10 @@ void ConnectionManagerImpl::resetAllStreams(absl::optional<StreamInfo::ResponseF
     if (response_flag.has_value()) {
       stream.filter_manager_.streamInfo().setResponseFlag(response_flag.value());
     }
+    // No longer reference the response_encoder_ seems to not be the right
+    // answer as we onResetStream end up trying to access it...
+    // We might want to just add an additional bool state to ActiveStream
+    // whether we've already removed the streamCallback.
     stream.onResetStream(StreamResetReason::ConnectionTermination, absl::string_view());
   }
 }
@@ -1537,13 +1551,6 @@ void ConnectionManagerImpl::ActiveStream::onResetStream(StreamResetReason reset_
   }
 
   connection_manager_.doDeferredStreamDestroy(*this);
-}
-
-void ConnectionManagerImpl::ActiveStream::onCodecClose() {
-  if (response_encoder_) {
-    response_encoder_->getStream().removeCallbacks(*this);
-    response_encoder_ = nullptr;
-  }
 }
 
 void ConnectionManagerImpl::ActiveStream::onAboveWriteBufferHighWatermark() {

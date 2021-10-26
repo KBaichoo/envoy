@@ -2047,7 +2047,7 @@ TEST_F(Http1ServerConnectionImplTest, WatermarkTest) {
   Buffer::OwnedImpl buffer("GET / HTTP/1.1\r\n\r\n");
   auto status = codec_->dispatch(buffer);
 
-  Http::MockStreamCallbacks stream_callbacks;
+  Http::MockStreamCallbacks stream_callbacks(response_encoder->getStream());
   response_encoder->getStream().addCallbacks(stream_callbacks);
 
   // Fake a call from the underlying Network::Connection and verify the stream is notified.
@@ -2280,7 +2280,7 @@ TEST_F(Http1ClientConnectionImplTest, Reset) {
   MockResponseDecoder response_decoder;
   Http::RequestEncoder& request_encoder = codec_->newStream(response_decoder);
 
-  Http::MockStreamCallbacks callbacks;
+  Http::MockStreamCallbacks callbacks(request_encoder.getStream());
   request_encoder.getStream().addCallbacks(callbacks);
   EXPECT_CALL(callbacks, onResetStream(StreamResetReason::LocalReset, _));
   request_encoder.getStream().resetStream(StreamResetReason::LocalReset);
@@ -2807,7 +2807,7 @@ TEST_F(Http1ClientConnectionImplTest, WatermarkTest) {
 
   NiceMock<MockResponseDecoder> response_decoder;
   Http::RequestEncoder& request_encoder = codec_->newStream(response_decoder);
-  Http::MockStreamCallbacks stream_callbacks;
+  Http::MockStreamCallbacks stream_callbacks(request_encoder.getStream());
   request_encoder.getStream().addCallbacks(stream_callbacks);
 
   // Fake a call from the underlying Network::Connection and verify the stream is notified.
@@ -2841,7 +2841,7 @@ TEST_F(Http1ClientConnectionImplTest, HighwatermarkMultipleResponses) {
 
   NiceMock<MockResponseDecoder> response_decoder;
   Http::RequestEncoder& request_encoder = codec_->newStream(response_decoder);
-  Http::MockStreamCallbacks stream_callbacks;
+  Http::MockStreamCallbacks stream_callbacks(request_encoder.getStream());
   request_encoder.getStream().addCallbacks(stream_callbacks);
 
   TestRequestHeaderMapImpl headers{{":method", "GET"}, {":path", "/"}, {":authority", "host"}};
@@ -2853,6 +2853,8 @@ TEST_F(Http1ClientConnectionImplTest, HighwatermarkMultipleResponses) {
       ->onUnderlyingConnectionAboveWriteBufferHighWatermark();
 
   EXPECT_CALL(response_decoder, decodeHeaders_(_, true));
+  // Stream will be closed before the MockStreamCallbacks is deleted.
+  EXPECT_CALL(stream_callbacks, onCloseCodecStream());
   Buffer::OwnedImpl response("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
   auto status = codec_->dispatch(response);
 
@@ -2875,7 +2877,7 @@ TEST_F(Http1ClientConnectionImplTest, LowWatermarkDuringClose) {
 
   NiceMock<MockResponseDecoder> response_decoder;
   Http::RequestEncoder& request_encoder = codec_->newStream(response_decoder);
-  Http::MockStreamCallbacks stream_callbacks;
+  Http::MockStreamCallbacks stream_callbacks(request_encoder.getStream());
   request_encoder.getStream().addCallbacks(stream_callbacks);
 
   TestRequestHeaderMapImpl headers{{":method", "GET"}, {":path", "/"}, {":authority", "host"}};
@@ -2888,6 +2890,8 @@ TEST_F(Http1ClientConnectionImplTest, LowWatermarkDuringClose) {
 
   EXPECT_CALL(response_decoder, decodeHeaders_(_, true))
       .WillOnce(Invoke([&](ResponseHeaderMapPtr&, bool) {
+        // Stream will be closed before the MockStreamCallbacks is deleted.
+        EXPECT_CALL(stream_callbacks, onCloseCodecStream());
         // Fake a call for going below the low watermark. Make sure no stream callbacks get called.
         EXPECT_CALL(stream_callbacks, onBelowWriteBufferLowWatermark()).Times(0);
         static_cast<ClientConnection*>(codec_.get())

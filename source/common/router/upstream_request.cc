@@ -314,7 +314,7 @@ void UpstreamRequest::onResetStream(Http::StreamResetReason reason,
   }
 }
 
-void UpstreamRequest::onCodecClose() {
+void UpstreamRequest::onCloseCodecStream() {
   if (upstream_) {
     clearRequestEncoder();
   }

@@ -157,6 +157,7 @@ public:
         .WillRepeatedly(Invoke([&](ResponseEncoder& encoder, bool) -> RequestDecoder& {
           response_encoder_ = &encoder;
           encoder.getStream().addCallbacks(server_stream_callbacks_);
+          server_stream_callbacks_.setStream(encoder.getStream());
           encoder.getStream().setFlushTimeout(std::chrono::milliseconds(30000));
           return request_decoder_;
         }));
@@ -362,6 +363,7 @@ TEST_P(Http2CodecImplTest, ShutdownNotice) {
 
   TestResponseHeaderMapImpl response_headers{{":status", "200"}};
   EXPECT_CALL(response_decoder_, decodeHeaders_(_, true));
+  EXPECT_CALL(server_stream_callbacks_, onCloseCodecStream());
   response_encoder_->encodeHeaders(response_headers, true);
 }
 
@@ -381,6 +383,7 @@ TEST_P(Http2CodecImplTest, ProtocolErrorForTest) {
   ServerConnectionImpl* raw_server = dynamic_cast<ServerConnectionImpl*>(server_.get());
   ASSERT(raw_server != nullptr);
   EXPECT_EQ(StatusCode::CodecProtocolError, getStatusCode(raw_server->protocolErrorForTest()));
+  EXPECT_CALL(server_stream_callbacks_, onCloseCodecStream());
 }
 
 // 100 response followed by 200 results in a [decode100ContinueHeaders, decodeHeaders] sequence.
@@ -398,6 +401,7 @@ TEST_P(Http2CodecImplTest, ContinueHeaders) {
 
   TestResponseHeaderMapImpl response_headers{{":status", "200"}};
   EXPECT_CALL(response_decoder_, decodeHeaders_(_, true));
+  EXPECT_CALL(server_stream_callbacks_, onCloseCodecStream());
   response_encoder_->encodeHeaders(response_headers, true);
 };
 
@@ -423,6 +427,7 @@ TEST_P(Http2CodecImplTest, TrailerStatus) {
   // nghttp2 doesn't allow :status in trailers
   EXPECT_THROW(response_encoder_->encode100ContinueHeaders(continue_headers), ClientCodecError);
   EXPECT_EQ(1, client_stats_store_.counter("http2.rx_messaging_error").value());
+  EXPECT_CALL(server_stream_callbacks_, onCloseCodecStream());
 };
 
 // Multiple 100 responses are passed to the response encoder (who is responsible for coalescing).
@@ -442,6 +447,7 @@ TEST_P(Http2CodecImplTest, MultipleContinueHeaders) {
 
   TestResponseHeaderMapImpl response_headers{{":status", "200"}};
   EXPECT_CALL(response_decoder_, decodeHeaders_(_, true));
+  EXPECT_CALL(server_stream_callbacks_, onCloseCodecStream());
   response_encoder_->encodeHeaders(response_headers, true);
 };
 
@@ -492,7 +498,7 @@ TEST_P(Http2CodecImplTest, InvalidContinueWithFinAllowed) {
   stream_error_on_invalid_http_messaging_ = true;
   initialize();
 
-  MockStreamCallbacks request_callbacks;
+  MockStreamCallbacks request_callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(request_callbacks);
 
   TestRequestHeaderMapImpl request_headers;
@@ -561,7 +567,7 @@ TEST_P(Http2CodecImplTest, InvalidRepeatContinueAllowed) {
   stream_error_on_invalid_http_messaging_ = true;
   initialize();
 
-  MockStreamCallbacks request_callbacks;
+  MockStreamCallbacks request_callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(request_callbacks);
 
   TestRequestHeaderMapImpl request_headers;
@@ -619,7 +625,7 @@ TEST_P(Http2CodecImplTest, Invalid204WithContentLengthAllowed) {
   stream_error_on_invalid_http_messaging_ = true;
   initialize();
 
-  MockStreamCallbacks request_callbacks;
+  MockStreamCallbacks request_callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(request_callbacks);
 
   TestRequestHeaderMapImpl request_headers;
@@ -662,7 +668,7 @@ TEST_P(Http2CodecImplTest, RefusedStreamReset) {
   EXPECT_CALL(request_decoder_, decodeHeaders_(_, false));
   EXPECT_TRUE(request_encoder_->encodeHeaders(request_headers, false).ok());
 
-  MockStreamCallbacks callbacks;
+  MockStreamCallbacks callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(callbacks);
   EXPECT_CALL(server_stream_callbacks_,
               onResetStream(StreamResetReason::LocalRefusedStreamReset, _));
@@ -1059,7 +1065,7 @@ TEST_P(Http2CodecImplTest, DumpsStreamlessConnectionWithoutAllocatingMemory) {
 
 TEST_P(Http2CodecImplTest, ShouldDumpActiveStreamsWithoutAllocatingMemory) {
   initialize();
-  MockStreamCallbacks callbacks;
+  MockStreamCallbacks callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(callbacks);
 
   TestRequestHeaderMapImpl request_headers;
@@ -1128,7 +1134,7 @@ TEST_P(Http2CodecImplTest, ShouldDumpCurrentSliceWithoutAllocatingMemory) {
   initialize();
   std::array<char, 2048> buffer;
   OutputBufferStream ostream{buffer.data(), buffer.size()};
-  MockStreamCallbacks callbacks;
+  MockStreamCallbacks callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(callbacks);
 
   // Send headers
@@ -1211,7 +1217,7 @@ TEST_P(Http2CodecImplDeferredResetTest, NoDeferredResetForClientStreams) {
 
   InSequence s;
 
-  MockStreamCallbacks client_stream_callbacks;
+  MockStreamCallbacks client_stream_callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(client_stream_callbacks);
 
   // Encode headers, encode data and send reset stream from the call stack of decodeHeaders in
@@ -1275,7 +1281,7 @@ TEST_P(Http2CodecImplDeferredResetTest, DeferredResetServerIfLocalEndStreamBefor
   }));
   EXPECT_TRUE(request_encoder_->encodeHeaders(request_headers, false).ok());
 
-  MockStreamCallbacks client_stream_callbacks;
+  MockStreamCallbacks client_stream_callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(client_stream_callbacks);
   EXPECT_CALL(response_decoder_, decodeHeaders_(_, false));
   EXPECT_CALL(response_decoder_, decodeData(_, false)).Times(AnyNumber());
@@ -1314,7 +1320,7 @@ TEST_P(Http2CodecImplDeferredResetTest, LargeDataDeferredResetServerIfLocalEndSt
   }));
   EXPECT_TRUE(request_encoder_->encodeHeaders(request_headers, false).ok());
 
-  MockStreamCallbacks client_stream_callbacks;
+  MockStreamCallbacks client_stream_callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(client_stream_callbacks);
   EXPECT_CALL(response_decoder_, decodeHeaders_(_, false));
   EXPECT_CALL(response_decoder_, decodeData(_, false)).Times(AnyNumber());
@@ -1349,7 +1355,7 @@ TEST_P(Http2CodecImplDeferredResetTest, NoDeferredResetServerIfResetBeforeLocalE
   }));
   EXPECT_TRUE(request_encoder_->encodeHeaders(request_headers, false).ok());
 
-  MockStreamCallbacks client_stream_callbacks;
+  MockStreamCallbacks client_stream_callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(client_stream_callbacks);
   EXPECT_CALL(response_decoder_, decodeHeaders_(_, _)).Times(0);
   EXPECT_CALL(response_decoder_, decodeData(_, _)).Times(0);
@@ -1368,7 +1374,7 @@ class Http2CodecImplFlowControlTest : public Http2CodecImplTest {};
 // when the stream has readDisable(true) called.
 TEST_P(Http2CodecImplFlowControlTest, TestFlowControlInPendingSendData) {
   initialize();
-  MockStreamCallbacks callbacks;
+  MockStreamCallbacks callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(callbacks);
 
   TestRequestHeaderMapImpl request_headers;
@@ -1433,6 +1439,7 @@ TEST_P(Http2CodecImplFlowControlTest, TestFlowControlInPendingSendData) {
   EXPECT_CALL(server_callbacks_, newStream(_, _))
       .WillOnce(Invoke([&](ResponseEncoder& encoder, bool) -> RequestDecoder& {
         response_encoder2 = &encoder;
+        server_stream_callbacks2.setStream(encoder.getStream());
         encoder.getStream().addCallbacks(server_stream_callbacks2);
         return request_decoder2;
       }));
@@ -1442,12 +1449,12 @@ TEST_P(Http2CodecImplFlowControlTest, TestFlowControlInPendingSendData) {
   // Add the stream callbacks belatedly. On creation the stream should have
   // been noticed that the connection was backed up. Any new subscriber to
   // stream callbacks should get a callback when they addCallbacks.
-  MockStreamCallbacks callbacks2;
+  MockStreamCallbacks callbacks2(request_encoder_->getStream());
   EXPECT_CALL(callbacks2, onAboveWriteBufferHighWatermark());
   request_encoder_->getStream().addCallbacks(callbacks2);
 
   // Add a third callback to make testing removal mid-watermark call below more interesting.
-  MockStreamCallbacks callbacks3;
+  MockStreamCallbacks callbacks3(request_encoder_->getStream());
   EXPECT_CALL(callbacks3, onAboveWriteBufferHighWatermark());
   request_encoder_->getStream().addCallbacks(callbacks3);
 
@@ -1457,6 +1464,8 @@ TEST_P(Http2CodecImplFlowControlTest, TestFlowControlInPendingSendData) {
   // and ensure it is not called.
   EXPECT_CALL(callbacks, onBelowWriteBufferLowWatermark()).WillOnce(Invoke([&]() -> void {
     request_encoder_->getStream().removeCallbacks(callbacks2);
+    // TODO(kbaichoo): perhaps add an accessors? Maybe this is fine though.
+    callbacks2.stream_ = nullptr;
   }));
   EXPECT_CALL(callbacks2, onBelowWriteBufferLowWatermark()).Times(0);
   EXPECT_CALL(callbacks3, onBelowWriteBufferLowWatermark());
@@ -1475,7 +1484,7 @@ TEST_P(Http2CodecImplFlowControlTest, TestFlowControlInPendingSendData) {
 // once the flow control window is full up.
 TEST_P(Http2CodecImplFlowControlTest, EarlyResetRestoresWindow) {
   initialize();
-  MockStreamCallbacks callbacks;
+  MockStreamCallbacks callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(callbacks);
 
   TestRequestHeaderMapImpl request_headers;
@@ -1535,7 +1544,6 @@ TEST_P(Http2CodecImplFlowControlTest, EarlyResetRestoresWindow) {
 // Test the HTTP2 pending_recv_data_ buffer going over and under watermark limits.
 TEST_P(Http2CodecImplFlowControlTest, FlowControlPendingRecvData) {
   initialize();
-  MockStreamCallbacks callbacks;
 
   TestRequestHeaderMapImpl request_headers;
   HttpTestUtility::addDefaultHeaders(request_headers);
@@ -1814,7 +1822,7 @@ TEST_P(Http2CodecImplFlowControlTest, RstStreamOnPendingFlushTimeoutFlood) {
 
 TEST_P(Http2CodecImplTest, WatermarkUnderEndStream) {
   initialize();
-  MockStreamCallbacks callbacks;
+  MockStreamCallbacks callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(callbacks);
 
   TestRequestHeaderMapImpl request_headers;
@@ -3031,7 +3039,7 @@ TEST_P(Http2CodecImplTest, ConnectTest) {
   client_http2_options_.set_allow_connect(true);
   server_http2_options_.set_allow_connect(true);
   initialize();
-  MockStreamCallbacks callbacks;
+  MockStreamCallbacks callbacks(request_encoder_->getStream());
   request_encoder_->getStream().addCallbacks(callbacks);
 
   TestRequestHeaderMapImpl request_headers;

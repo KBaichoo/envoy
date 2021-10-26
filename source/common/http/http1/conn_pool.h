@@ -57,7 +57,7 @@ public:
     void onResetStream(StreamResetReason, absl::string_view) override;
     void onAboveWriteBufferHighWatermark() override {}
     void onBelowWriteBufferLowWatermark() override {}
-    void onCodecClose() override;
+    void onCloseCodecStream() override;
 
     ActiveClient& parent_;
     bool stream_incomplete_{};

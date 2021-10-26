@@ -70,7 +70,7 @@ public:
                      absl::string_view transport_failure_reason) override;
   void onAboveWriteBufferHighWatermark() override {}
   void onBelowWriteBufferLowWatermark() override {}
-  void onCodecClose() override;
+  void onCloseCodecStream() override { encoder_ = nullptr; }
 
 private:
   Event::Dispatcher& dispatcher_;

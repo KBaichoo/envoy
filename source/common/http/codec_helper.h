@@ -13,12 +13,6 @@ namespace Http {
 
 class StreamCallbackHelper {
 public:
-  ~StreamCallbackHelper() {
-    ASSERT(std::find_if(callbacks_.begin(), callbacks_.end(),
-                        [](StreamCallbacks* cb) { return cb != nullptr; }) == callbacks_.end(),
-           "There is at least one lingering observer on the codec.");
-  }
-
   void runLowWatermarkCallbacks() {
     if (reset_callbacks_started_ || local_end_stream_) {
       return;
@@ -52,9 +46,12 @@ public:
     }
 
     reset_callbacks_started_ = true;
-    for (StreamCallbacks* callbacks : callbacks_) {
-      if (callbacks) {
-        callbacks->onResetStream(reason, absl::string_view());
+    // We should not notify clients of any events after this
+    // function runs.
+    for (auto& callback : callbacks_) {
+      if (callback) {
+        callback->onResetStream(reason, absl::string_view());
+        callback = nullptr;
       }
     }
   }
@@ -63,7 +60,7 @@ public:
 
 protected:
   void addCallbacksHelper(StreamCallbacks& callbacks) {
-    ASSERT(!reset_callbacks_started_ && !local_end_stream_);
+    ASSERT(!reset_callbacks_started_ && !local_end_stream_ && !stream_close_callbacks_started_);
     callbacks_.push_back(&callbacks);
     for (uint32_t i = 0; i < high_watermark_callbacks_; ++i) {
       callbacks.onAboveWriteBufferHighWatermark();
@@ -71,6 +68,10 @@ protected:
   }
 
   void removeCallbacksHelper(StreamCallbacks& callbacks) {
+    if (stream_close_callbacks_started_) {
+      return;
+    }
+
     // For performance reasons we just clear the callback and do not resize the vector.
     // Reset callbacks scale with the number of filters per request and do not get added and
     // removed multiple times.
@@ -85,10 +86,14 @@ protected:
   }
 
   void notifyObserversToDetach() {
-    // Tell any lingering observers the stream is going away.
-    for (StreamCallbacks* cb : callbacks_) {
-      if (cb) {
-        cb->onCodecClose();
+    // Tell any lingering observers the stream is going away, and implicitly
+    // detach.
+    ASSERT(!stream_close_callbacks_started_);
+    stream_close_callbacks_started_ = true;
+    for (auto& callback : callbacks_) {
+      if (callback) {
+        callback->onCloseCodecStream();
+        callback = nullptr;
       }
     }
   }
@@ -96,6 +101,7 @@ protected:
 private:
   absl::InlinedVector<StreamCallbacks*, 8> callbacks_;
   bool reset_callbacks_started_{};
+  bool stream_close_callbacks_started_{};
   uint32_t high_watermark_callbacks_{};
 };
 

@@ -208,13 +208,6 @@ void FakeStream::onResetStream(Http::StreamResetReason, absl::string_view) {
   saw_reset_ = true;
 }
 
-void FakeStream::onCodecClose() {
-  if (encoder_) {
-    encoder_->getStream().removeCallbacks(*this);
-    encoder_ = nullptr;
-  }
-}
-
 AssertionResult FakeStream::waitForHeadersComplete(milliseconds timeout) {
   absl::MutexLock lock(&lock_);
   const auto reached = [this]()

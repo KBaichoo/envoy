@@ -36,7 +36,26 @@ MockFilterManagerCallbacks::MockFilterManagerCallbacks() {
 MockFilterManagerCallbacks::~MockFilterManagerCallbacks() = default;
 
 MockStreamCallbacks::MockStreamCallbacks() = default;
-MockStreamCallbacks::~MockStreamCallbacks() = default;
+MockStreamCallbacks::MockStreamCallbacks(Http::Stream& stream) : stream_(&stream) {
+  ON_CALL(*this, onCloseCodecStream()).WillByDefault(Invoke([this]() {
+    std::cerr << "MockStreamCallbacks::onCloseCodecStream" << std::endl;
+    stream_ = nullptr;
+  }));
+  ON_CALL(*this, onResetStream(_, _)).WillByDefault(Invoke([this]() {
+    // TODO(kbaichoo): Remove the print?
+    std::cerr << "MockStreamCallbacks::onResetStream" << std::endl;
+    stream_ = nullptr;
+  }));
+}
+
+MockStreamCallbacks::~MockStreamCallbacks() {
+  std::cerr << "~MockStreamCallbacks" << std::endl;
+  if (stream_) {
+    stream_->removeCallbacks(*this);
+  }
+}
+
+void MockStreamCallbacks::setStream(Http::Stream& stream) { stream_ = &stream; }
 
 MockServerConnection::MockServerConnection() {
   ON_CALL(*this, protocol()).WillByDefault(Invoke([this]() { return protocol_; }));

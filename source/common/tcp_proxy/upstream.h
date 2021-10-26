@@ -143,7 +143,7 @@ public:
                      absl::string_view transport_failure_reason) override;
   void onAboveWriteBufferHighWatermark() override;
   void onBelowWriteBufferLowWatermark() override;
-  void onCodecClose() override;
+  void onCloseCodecStream() override { request_encoder_ = nullptr; }
 
   virtual void setRequestEncoder(Http::RequestEncoder& request_encoder, bool is_ssl) PURE;
   void setConnPoolCallbacks(std::unique_ptr<HttpConnPool::Callbacks>&& callbacks) {

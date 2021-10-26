@@ -291,11 +291,13 @@ public:
   virtual void onBelowWriteBufferLowWatermark() PURE;
 
   /**
-   * Fires when the codec level object is being closed.
-   * Any references to the stream or codec holding the stream
-   * should be removed. Otherwise they are dangling.
+   * Fires when the codec level stream object is being closed.
+   * Any references to the stream or encoders holding the stream
+   * should be removed, otherwise they are dangling.
+   * No additional callbacks will fire for this event, as this
+   * is an implicit detach of all observers.
    */
-  virtual void onCodecClose(Stream& stream) PURE;
+  virtual void onCloseCodecStream() PURE;
 };
 
 /**

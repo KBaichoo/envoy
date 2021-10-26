@@ -159,7 +159,7 @@ sendRequestAndWaitForResponse(Event::Dispatcher& dispatcher, const std::string& 
 
   Http::RequestEncoder& encoder = client.newStream(*response);
   encoder.getStream().addCallbacks(*response);
-  response->setEncoder(encoder);
+  response->setEncoder(&encoder);
 
   Http::TestRequestHeaderMapImpl headers;
   headers.setMethod(method);
