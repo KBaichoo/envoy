@@ -299,6 +299,9 @@ protected:
     // to the decoder_.
     virtual void decodeHeaders() PURE;
     virtual void decodeTrailers() PURE;
+    // Does any necessary buffering if backed up, ultimately passing the data to
+    // the decoder_.
+    void decodeData();
 
     // Get MetadataEncoder for this stream.
     MetadataEncoder& getMetadataEncoderOld();

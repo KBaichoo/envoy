@@ -387,6 +387,16 @@ void ConnectionImpl::StreamImpl::pendingRecvBufferLowWatermark() {
   readDisable(false);
 }
 
+void ConnectionImpl::StreamImpl::decodeData() {
+  // It's possible that we are waiting to send a deferred reset, so only raise data if local
+  // is not complete.
+  if (!deferred_reset_) {
+    decoder().decodeData(*pending_recv_data_, remote_end_stream_);
+  }
+
+  pending_recv_data_->drain(pending_recv_data_->length());
+}
+
 void ConnectionImpl::ClientStreamImpl::decodeHeaders() {
   auto& headers = absl::get<ResponseHeaderMapPtr>(headers_or_trailers_);
   const uint64_t status = Http::Utility::getResponseStatus(*headers);
@@ -1070,14 +1080,7 @@ Status ConnectionImpl::onFrameReceived(const nghttp2_frame* frame) {
   }
   case NGHTTP2_DATA: {
     stream->remote_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
-
-    // It's possible that we are waiting to send a deferred reset, so only raise data if local
-    // is not complete.
-    if (!stream->deferred_reset_) {
-      stream->decoder().decodeData(*stream->pending_recv_data_, stream->remote_end_stream_);
-    }
-
-    stream->pending_recv_data_->drain(stream->pending_recv_data_->length());
+    stream->decodeData();
     break;
   }
   case NGHTTP2_RST_STREAM: {
