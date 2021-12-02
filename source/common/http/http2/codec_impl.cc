@@ -356,14 +356,6 @@ void ConnectionImpl::StreamImpl::processBufferedData() {
   auto next_stage = stream_manager_.getNextStage();
   while (!buffersOverrun() && next_stage != BackedUpStreamManager::Stage::Empty) {
     switch (next_stage) {
-    case BackedUpStreamManager::Stage::Headers:
-      std::cerr << "Backed up Headers being decoded." << std::endl;
-      if (stream_manager_.header_end_stream_) {
-        remote_end_stream_ = true; // restore the deferred end_stream from the remote.
-      }
-      decodeHeaders();
-      stream_manager_.headers_buffered_ = false;
-      break;
     case BackedUpStreamManager::Stage::Body:
       std::cerr << "Backed up BODY being decoded." << std::endl;
       if (stream_manager_.data_end_stream_) {
@@ -377,7 +369,7 @@ void ConnectionImpl::StreamImpl::processBufferedData() {
       // trailers.
       std::cerr << "Backed up trailers being decoded." << std::endl;
       decodeTrailers();
-      stream_manager_.headers_buffered_ = false;
+      stream_manager_.trailers_buffered_ = false;
       break;
     default:
       std::cerr << "Not implemented..." << std::endl;
@@ -441,9 +433,6 @@ void ConnectionImpl::StreamImpl::pendingRecvBufferLowWatermark() {
 
 ConnectionImpl::StreamImpl::BackedUpStreamManager::Stage
 ConnectionImpl::StreamImpl::BackedUpStreamManager::getNextStage() {
-  if (headers_buffered_) {
-    return Stage::Headers;
-  }
   if (body_buffered_) {
     return Stage::Body;
   }
@@ -1131,13 +1120,9 @@ Status ConnectionImpl::onFrameReceived(const nghttp2_frame* frame) {
 
   switch (frame->hd.type) {
   case NGHTTP2_HEADERS: {
-    if (Runtime::runtimeFeatureEnabled(
-            "envoy.reloadable_features.defer_processing_backedup_streams") &&
-        stream->buffersOverrun()) {
-      stream->stream_manager_.header_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
-    } else {
-      stream->remote_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
-    }
+    // TODO(kbaichoo): Check whether we need to defer capturing of this if we
+    // have trailers and have buffered the body.
+    stream->remote_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
     if (!stream->cookies_.empty()) {
       HeaderString key(Headers::get().Cookie);
       stream->headers().addViaMove(std::move(key), std::move(stream->cookies_));
@@ -1158,8 +1143,7 @@ Status ConnectionImpl::onFrameReceived(const nghttp2_frame* frame) {
                                            ? adapter_->IsServerSession()
                                            : nghttp2_session_check_server_session(session_);
         if (is_server_session || stream->received_noninformational_headers_) {
-          // TODO(kbaichoo): I might have to double check this...
-          ASSERT(stream->remote_end_stream_ || stream->stream_manager_.header_end_stream_);
+          ASSERT(stream->remote_end_stream_);
           stream->decodeTrailers();
         } else {
           // We're a client session and still waiting for non-informational headers.

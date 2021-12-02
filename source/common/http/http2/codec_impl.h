@@ -358,7 +358,6 @@ protected:
        * Which decode call should next be called since it was deferred.
        */
       enum class Stage {
-        Headers,  // We've buffered headers
         Body,     // We've buffered body
         Trailers, // We've buffered trailers
         Metadata, // We've buffered metadata
@@ -368,13 +367,11 @@ protected:
       // Returns the next stage of stream data to process that was deferred.
       Stage getNextStage();
 
-      bool headers_buffered_{false};
       bool body_buffered_{false};
       bool trailers_buffered_{false};
       // We either will get the end stream bit via header, data or trailers.
       // If want to track when we see the end stream in order to determine when
       // to pass it along when buffering it.
-      bool header_end_stream_{false};
       bool data_end_stream_{false};
     };
 
