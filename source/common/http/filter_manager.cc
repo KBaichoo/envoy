@@ -624,6 +624,7 @@ void FilterManager::decodeData(ActiveStreamDecoderFilter* filter, Buffer::Instan
     }
     // If the filter pointed by entry has stopped for all frame types, return now.
     if (handleDataIfStopAll(**entry, data, state_.decoder_filters_streaming_)) {
+      std::cerr << "handleDataIfStopAll" << std::endl;
       return;
     }
     // If end_stream_ is marked for a filter, the data is not for this filter and filters after.
@@ -659,7 +660,9 @@ void FilterManager::decodeData(ActiveStreamDecoderFilter* filter, Buffer::Instan
     if ((*entry)->end_stream_) {
       return;
     }
-    ASSERT(!(state_.filter_call_state_ & FilterCallState::DecodeData));
+    std::cerr << "Not decode data: " << !(state_.filter_call_state_ & FilterCallState::DecodeData)
+              << std::endl;
+    // ASSERT(!(state_.filter_call_state_ & FilterCallState::DecodeData));
 
     // We check the request_trailers_ pointer here in case addDecodedTrailers
     // is called in decodeData during a previous filter invocation, at which point we communicate to
