@@ -349,6 +349,43 @@ void ConnectionImpl::StreamImpl::encodeMetadata(const MetadataMapVector& metadat
   }
 }
 
+void ConnectionImpl::StreamImpl::processBufferedData() {
+  // Process all buffered data.
+  // TODO(kbaichoo): implement for metadata, endstream...
+  // For endstream, can either pass in a data call, or trailer.
+  auto next_stage = stream_manager_.getNextStage();
+  while (!buffersOverrun() && next_stage != BackedUpStreamManager::Stage::Empty) {
+    switch (next_stage) {
+    case BackedUpStreamManager::Stage::Headers:
+      std::cerr << "Backed up Headers being decoded." << std::endl;
+      if (stream_manager_.header_end_stream_) {
+        remote_end_stream_ = true; // restore the deferred end_stream from the remote.
+      }
+      decodeHeaders();
+      stream_manager_.headers_buffered_ = false;
+      break;
+    case BackedUpStreamManager::Stage::Body:
+      std::cerr << "Backed up BODY being decoded." << std::endl;
+      if (stream_manager_.data_end_stream_) {
+        remote_end_stream_ = true; // restore the deferred end_stream from the remote.
+      }
+      decodeData();
+      stream_manager_.body_buffered_ = false;
+      break;
+    case BackedUpStreamManager::Stage::Trailers:
+      // I *think* we don't need to restore in this case since we're sending
+      // trailers.
+      std::cerr << "Backed up trailers being decoded." << std::endl;
+      decodeTrailers();
+      stream_manager_.headers_buffered_ = false;
+      break;
+    default:
+      std::cerr << "Not implemented..." << std::endl;
+    }
+    next_stage = stream_manager_.getNextStage();
+  }
+}
+
 void ConnectionImpl::StreamImpl::readDisable(bool disable) {
   ENVOY_CONN_LOG(debug, "Stream {} {}, unconsumed_bytes {} read_disable_count {}",
                  parent_.connection_, stream_id_, (disable ? "disabled" : "enabled"),
@@ -359,6 +396,11 @@ void ConnectionImpl::StreamImpl::readDisable(bool disable) {
     ASSERT(read_disable_count_ > 0);
     --read_disable_count_;
     if (!buffersOverrun()) {
+      // TODO(kbaichoo): In a future PR, update this to only emit a "small"
+      // chunk of data to process.
+      // Process all buffered data.
+      processBufferedData();
+
       if (parent_.use_new_codec_wrapper_) {
         parent_.adapter_->MarkDataConsumedForStream(stream_id_, unconsumed_bytes_);
       } else {
@@ -374,20 +416,53 @@ void ConnectionImpl::StreamImpl::readDisable(bool disable) {
 }
 
 void ConnectionImpl::StreamImpl::pendingRecvBufferHighWatermark() {
-  ENVOY_CONN_LOG(debug, "recv buffer over limit ", parent_.connection_);
-  ASSERT(!pending_receive_buffer_high_watermark_called_);
-  pending_receive_buffer_high_watermark_called_ = true;
-  readDisable(true);
+  // TODO(kbaichoo): Fine tune how this is disabled if doing delayed
+  // processing.
+  if (Runtime::runtimeFeatureEnabled(
+          "envoy.reloadable_features.defer_processing_backedup_streams")) {
+    ENVOY_CONN_LOG(debug, "recv buffer over limit ", parent_.connection_);
+    ASSERT(!pending_receive_buffer_high_watermark_called_);
+    pending_receive_buffer_high_watermark_called_ = true;
+    readDisable(true);
+  }
 }
 
 void ConnectionImpl::StreamImpl::pendingRecvBufferLowWatermark() {
-  ENVOY_CONN_LOG(debug, "recv buffer under limit ", parent_.connection_);
-  ASSERT(pending_receive_buffer_high_watermark_called_);
-  pending_receive_buffer_high_watermark_called_ = false;
-  readDisable(false);
+  // TODO(kbaichoo): Fine tune how this is disabled if doing delayed
+  // processing.
+  if (Runtime::runtimeFeatureEnabled(
+          "envoy.reloadable_features.defer_processing_backedup_streams")) {
+    ENVOY_CONN_LOG(debug, "recv buffer under limit ", parent_.connection_);
+    ASSERT(pending_receive_buffer_high_watermark_called_);
+    pending_receive_buffer_high_watermark_called_ = false;
+    readDisable(false);
+  }
+}
+
+ConnectionImpl::StreamImpl::BackedUpStreamManager::Stage
+ConnectionImpl::StreamImpl::BackedUpStreamManager::getNextStage() {
+  if (headers_buffered_) {
+    return Stage::Headers;
+  }
+  if (body_buffered_) {
+    return Stage::Body;
+  }
+  if (trailers_buffered_) {
+    return Stage::Trailers;
+  }
+  // TODO (kbaichoo): where should metadata be here?
+  return Stage::Empty;
 }
 
 void ConnectionImpl::StreamImpl::decodeData() {
+  if (Runtime::runtimeFeatureEnabled(
+          "envoy.reloadable_features.defer_processing_backedup_streams") &&
+      buffersOverrun()) {
+    stream_manager_.body_buffered_ = true;
+    std::cerr << "Buffering decodeData() call for stream:" << this << std::endl;
+    return;
+  }
+
   // It's possible that we are waiting to send a deferred reset, so only raise data if local
   // is not complete.
   if (!deferred_reset_) {
@@ -419,6 +494,14 @@ void ConnectionImpl::ClientStreamImpl::decodeHeaders() {
 }
 
 void ConnectionImpl::ClientStreamImpl::decodeTrailers() {
+  if (Runtime::runtimeFeatureEnabled(
+          "envoy.reloadable_features.defer_processing_backedup_streams") &&
+      buffersOverrun()) {
+    stream_manager_.trailers_buffered_ = true;
+    std::cerr << "Buffering decodeTrailers() call for stream:" << this << std::endl;
+    return;
+  }
+
   response_decoder_.decodeTrailers(
       std::move(absl::get<ResponseTrailerMapPtr>(headers_or_trailers_)));
 }
@@ -432,6 +515,14 @@ void ConnectionImpl::ServerStreamImpl::decodeHeaders() {
 }
 
 void ConnectionImpl::ServerStreamImpl::decodeTrailers() {
+  if (Runtime::runtimeFeatureEnabled(
+          "envoy.reloadable_features.defer_processing_backedup_streams") &&
+      buffersOverrun()) {
+    stream_manager_.trailers_buffered_ = true;
+    std::cerr << "Buffering decodeTrailers() call for stream:" << this << std::endl;
+    // TODO(kbaichoo): buffering trailers includes endstream IIRC
+    return;
+  }
   request_decoder_->decodeTrailers(
       std::move(absl::get<RequestTrailerMapPtr>(headers_or_trailers_)));
 }
@@ -1040,7 +1131,13 @@ Status ConnectionImpl::onFrameReceived(const nghttp2_frame* frame) {
 
   switch (frame->hd.type) {
   case NGHTTP2_HEADERS: {
-    stream->remote_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
+    if (Runtime::runtimeFeatureEnabled(
+            "envoy.reloadable_features.defer_processing_backedup_streams") &&
+        stream->buffersOverrun()) {
+      stream->stream_manager_.header_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
+    } else {
+      stream->remote_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
+    }
     if (!stream->cookies_.empty()) {
       HeaderString key(Headers::get().Cookie);
       stream->headers().addViaMove(std::move(key), std::move(stream->cookies_));
@@ -1061,7 +1158,8 @@ Status ConnectionImpl::onFrameReceived(const nghttp2_frame* frame) {
                                            ? adapter_->IsServerSession()
                                            : nghttp2_session_check_server_session(session_);
         if (is_server_session || stream->received_noninformational_headers_) {
-          ASSERT(stream->remote_end_stream_);
+          // TODO(kbaichoo): I might have to double check this...
+          ASSERT(stream->remote_end_stream_ || stream->stream_manager_.header_end_stream_);
           stream->decodeTrailers();
         } else {
           // We're a client session and still waiting for non-informational headers.
@@ -1079,7 +1177,13 @@ Status ConnectionImpl::onFrameReceived(const nghttp2_frame* frame) {
     break;
   }
   case NGHTTP2_DATA: {
-    stream->remote_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
+    if (Runtime::runtimeFeatureEnabled(
+            "envoy.reloadable_features.defer_processing_backedup_streams") &&
+        stream->buffersOverrun()) {
+      stream->stream_manager_.data_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
+    } else {
+      stream->remote_end_stream_ = frame->hd.flags & NGHTTP2_FLAG_END_STREAM;
+    }
     stream->decodeData();
     break;
   }
