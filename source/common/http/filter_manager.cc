@@ -612,6 +612,11 @@ void FilterManager::decodeData(ActiveStreamDecoderFilter* filter, Buffer::Instan
     return;
   }
 
+  // Stop re-entrant calls from occuring.
+  if (state_.filter_call_state_ & FilterCallState::DecodeData) {
+    return;
+  }
+
   auto trailers_added_entry = decoder_filters_.end();
   const bool trailers_exists_at_start = filter_manager_callbacks_.requestTrailers().has_value();
   // Filter iteration may start at the current filter.

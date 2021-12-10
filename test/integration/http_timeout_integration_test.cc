@@ -399,6 +399,7 @@ TEST_P(HttpTimeoutIntegrationTest,
   testRouterRequestAndResponseWithHedgedPerTryTimeout(1024 * 1024, 1024, false);
 }
 
+// TODO(kbaichoo): for some reason this breaks and doesn't end up draining.
 TEST_P(HttpTimeoutIntegrationTest,
        HedgedPerTryTimeoutLowDownstreamBufferLimitLargeResponseFirstRequestWins) {
   config_helper_.setBufferLimits(1024 * 1024, 1024); // Set buffer limits upstream and downstream.
