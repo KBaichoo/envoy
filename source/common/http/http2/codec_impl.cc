@@ -1341,6 +1341,7 @@ int ConnectionImpl::onStreamClose(int32_t stream_id, uint32_t error_code) {
     ENVOY_CONN_LOG(debug, "stream closed: {}", connection_, error_code);
     // The latter "and" is we don't have the final bits (data or trailer
     // buffered) -- then stream should be reset.
+    // TODO(kbaichoo): might want to revert this logic.
     if ((!stream->remote_end_stream_ || !stream->local_end_stream_) &&
         (!stream->stream_manager_.data_end_stream_ ||
          !stream->stream_manager_.trailers_buffered_)) {
