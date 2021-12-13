@@ -349,12 +349,14 @@ void ConnectionImpl::StreamImpl::encodeMetadata(const MetadataMapVector& metadat
   }
 }
 
-void ConnectionImpl::StreamImpl::processBufferedData() {
+void ConnectionImpl::StreamImpl::processBufferedData(bool stream_being_destroyed) {
   // Process all buffered data.
   // TODO(kbaichoo): implement for metadata, endstream...
   // For endstream, can either pass in a data call, or trailer.
   auto next_stage = stream_manager_.getNextStage();
-  while (!buffersOverrun() && next_stage != BackedUpStreamManager::Stage::Empty) {
+  stream_manager_.flush_all_data_ = stream_being_destroyed;
+  bool continue_processing = stream_being_destroyed || !buffersOverrun();
+  while (continue_processing && next_stage != BackedUpStreamManager::Stage::Empty) {
     switch (next_stage) {
     case BackedUpStreamManager::Stage::Body:
       std::cerr << "Backed up BODY being decoded." << std::endl;
@@ -368,6 +370,7 @@ void ConnectionImpl::StreamImpl::processBufferedData() {
       // I *think* we don't need to restore in this case since we're sending
       // trailers.
       std::cerr << "Backed up trailers being decoded." << std::endl;
+      remote_end_stream_ = true; // restore the deferred end_stream from the remote.
       decodeTrailers();
       stream_manager_.trailers_buffered_ = false;
       break;
@@ -375,6 +378,7 @@ void ConnectionImpl::StreamImpl::processBufferedData() {
       std::cerr << "Not implemented..." << std::endl;
     }
     next_stage = stream_manager_.getNextStage();
+    continue_processing = stream_being_destroyed || !buffersOverrun();
   }
 }
 
@@ -410,7 +414,7 @@ void ConnectionImpl::StreamImpl::readDisable(bool disable) {
 void ConnectionImpl::StreamImpl::pendingRecvBufferHighWatermark() {
   // TODO(kbaichoo): Fine tune how this is disabled if doing delayed
   // processing.
-  if (Runtime::runtimeFeatureEnabled(
+  if (!Runtime::runtimeFeatureEnabled(
           "envoy.reloadable_features.defer_processing_backedup_streams")) {
     ENVOY_CONN_LOG(debug, "recv buffer over limit ", parent_.connection_);
     ASSERT(!pending_receive_buffer_high_watermark_called_);
@@ -422,7 +426,7 @@ void ConnectionImpl::StreamImpl::pendingRecvBufferHighWatermark() {
 void ConnectionImpl::StreamImpl::pendingRecvBufferLowWatermark() {
   // TODO(kbaichoo): Fine tune how this is disabled if doing delayed
   // processing.
-  if (Runtime::runtimeFeatureEnabled(
+  if (!Runtime::runtimeFeatureEnabled(
           "envoy.reloadable_features.defer_processing_backedup_streams")) {
     ENVOY_CONN_LOG(debug, "recv buffer under limit ", parent_.connection_);
     ASSERT(pending_receive_buffer_high_watermark_called_);
@@ -444,9 +448,11 @@ ConnectionImpl::StreamImpl::BackedUpStreamManager::getNextStage() {
 }
 
 void ConnectionImpl::StreamImpl::decodeData() {
+  // TODO(kbaichoo): this, and elsewhere should not buffer data if the backed up
+  // stream manager says not to.
   if (Runtime::runtimeFeatureEnabled(
           "envoy.reloadable_features.defer_processing_backedup_streams") &&
-      buffersOverrun()) {
+      buffersOverrun() && !stream_manager_.flush_all_data_) {
     stream_manager_.body_buffered_ = true;
     std::cerr << "Buffering decodeData() call for stream:" << this << std::endl;
     return;
@@ -485,7 +491,7 @@ void ConnectionImpl::ClientStreamImpl::decodeHeaders() {
 void ConnectionImpl::ClientStreamImpl::decodeTrailers() {
   if (Runtime::runtimeFeatureEnabled(
           "envoy.reloadable_features.defer_processing_backedup_streams") &&
-      buffersOverrun()) {
+      buffersOverrun() && !stream_manager_.flush_all_data_) {
     stream_manager_.trailers_buffered_ = true;
     std::cerr << "Buffering decodeTrailers() call for stream:" << this << std::endl;
     return;
@@ -506,7 +512,7 @@ void ConnectionImpl::ServerStreamImpl::decodeHeaders() {
 void ConnectionImpl::ServerStreamImpl::decodeTrailers() {
   if (Runtime::runtimeFeatureEnabled(
           "envoy.reloadable_features.defer_processing_backedup_streams") &&
-      buffersOverrun()) {
+      buffersOverrun() && !stream_manager_.flush_all_data_) {
     stream_manager_.trailers_buffered_ = true;
     std::cerr << "Buffering decodeTrailers() call for stream:" << this << std::endl;
     // TODO(kbaichoo): buffering trailers includes endstream IIRC
@@ -1329,8 +1335,15 @@ ssize_t ConnectionImpl::onSend(const uint8_t* data, size_t length) {
 int ConnectionImpl::onStreamClose(int32_t stream_id, uint32_t error_code) {
   StreamImpl* stream = getStream(stream_id);
   if (stream) {
+    // We should flush through all data related to this stream if it was
+    // buffered.
+    stream->processBufferedData(true);
     ENVOY_CONN_LOG(debug, "stream closed: {}", connection_, error_code);
-    if (!stream->remote_end_stream_ || !stream->local_end_stream_) {
+    // The latter "and" is we don't have the final bits (data or trailer
+    // buffered) -- then stream should be reset.
+    if ((!stream->remote_end_stream_ || !stream->local_end_stream_) &&
+        (!stream->stream_manager_.data_end_stream_ ||
+         !stream->stream_manager_.trailers_buffered_)) {
       StreamResetReason reason;
       if (stream->reset_due_to_messaging_error_) {
         // Unfortunately, the nghttp2 API makes it incredibly difficult to clearly understand

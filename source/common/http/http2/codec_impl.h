@@ -315,7 +315,9 @@ protected:
 
     void encodeDataHelper(Buffer::Instance& data, bool end_stream,
                           bool skip_encoding_empty_trailers);
-    void processBufferedData();
+    // Should only be called either when hit low watermark or stream is being
+    // destroyed (seen end_Stream, and there are no errors on the stream).
+    void processBufferedData(bool stream_being_destroyed = false);
 
     const StreamInfo::BytesMeterSharedPtr& bytesMeter() override { return bytes_meter_; }
     ConnectionImpl& parent_;
@@ -373,6 +375,11 @@ protected:
       // If want to track when we see the end stream in order to determine when
       // to pass it along when buffering it.
       bool data_end_stream_{false};
+      // Set to true when the stream is being deleted (at least for when this is
+      // the upstream request sending downstream)
+      // TODO(kbaichoo): revisit s.t. this only interacts for upstream to
+      // downstream case.
+      bool flush_all_data_{false};
     };
 
     BackedUpStreamManager stream_manager_;
