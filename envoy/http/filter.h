@@ -339,6 +339,12 @@ public:
   virtual void continueDecoding() PURE;
 
   /**
+   * @return The bytes buffered at the receiving codec. Should be taken into
+   * account for retries.
+   */
+  virtual uint32_t recievedBytesBuffered() const PURE;
+
+  /**
    * @return const Buffer::Instance* the currently buffered data as buffered by this filter or
    *         previous ones in the filter chain. May be nullptr if nothing has been buffered yet.
    */

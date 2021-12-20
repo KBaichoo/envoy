@@ -763,8 +763,16 @@ Http::FilterDataStatus Filter::decodeData(Buffer::Instance& data, bool end_strea
   bool buffering = (retry_state_ && retry_state_->enabled()) || !active_shadow_policies_.empty() ||
                    (internal_redirects_with_body_enabled_ && route_entry_ &&
                     route_entry_->internalRedirectPolicy().enabled());
-  if (buffering &&
-      getLength(callbacks_->decodingBuffer()) + data.length() > retry_shadow_buffer_limit_) {
+  // TODO(kbaichoo): somewhere here need to take into account the buffered data
+  // in the recv codec?
+  // Yes it NEEDs to take into account the buffered data from recv codec!!
+  uint64_t buffered_bytes_for_request = data.length() + getLength(callbacks_->decodingBuffer());
+  uint32_t buffered_in_codec = callbacks_->recievedBytesBuffered();
+  buffered_bytes_for_request += buffered_in_codec;
+  std::cerr << "buffered " << buffered_bytes_for_request
+            << " of which the following are in codec:" << buffered_in_codec
+            << " compared to retry limit of:" << retry_shadow_buffer_limit_ << std::endl;
+  if (buffering && buffered_bytes_for_request > retry_shadow_buffer_limit_) {
     // The request is larger than we should buffer. Give up on the retry/shadow
     cluster_->stats().retry_or_shadow_abandoned_.inc();
     retry_state_.reset();

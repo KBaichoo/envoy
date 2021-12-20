@@ -75,7 +75,11 @@ public:
   void removeCallbacks(Http::StreamCallbacks& callbacks) override {
     removeCallbacksHelper(callbacks);
   }
-  uint32_t bufferLimit() override { return send_buffer_simulation_.highWatermark(); }
+  uint32_t bufferLimit() const override { return send_buffer_simulation_.highWatermark(); }
+  uint32_t recievedBytesBuffered() const override {
+    // TODO(kbaichoo): Implement? Not delaying serialization currently...
+    return 0;
+  }
   const Network::Address::InstanceConstSharedPtr& connectionLocalAddress() override {
     return connection()->connectionInfoProvider().localAddress();
   }

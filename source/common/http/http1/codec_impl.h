@@ -60,7 +60,12 @@ public:
   // progress may be made with the codec.
   void resetStream(StreamResetReason reason) override;
   void readDisable(bool disable) override;
-  uint32_t bufferLimit() override;
+  uint32_t bufferLimit() const override;
+  uint32_t recievedBytesBuffered() const override {
+    // TODO(kbaichoo): unimplemented for now in H1.. (since we don't do delayed
+    // serialization)
+    return 0;
+  }
   absl::string_view responseDetails() override { return details_; }
   const Network::Address::InstanceConstSharedPtr& connectionLocalAddress() override;
   void setFlushTimeout(std::chrono::milliseconds) override {

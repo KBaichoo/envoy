@@ -255,7 +255,8 @@ protected:
     void removeCallbacks(StreamCallbacks& callbacks) override { removeCallbacksHelper(callbacks); }
     void resetStream(StreamResetReason reason) override;
     void readDisable(bool disable) override;
-    uint32_t bufferLimit() override { return pending_recv_data_->highWatermark(); }
+    uint32_t bufferLimit() const override { return pending_recv_data_->highWatermark(); }
+    uint32_t recievedBytesBuffered() const override { return pending_recv_data_->length(); }
     const Network::Address::InstanceConstSharedPtr& connectionLocalAddress() override {
       return parent_.connection_.connectionInfoProvider().localAddress();
     }
