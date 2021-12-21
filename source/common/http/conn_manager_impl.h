@@ -289,8 +289,8 @@ private:
       return connection_manager_.enable_internal_redirects_with_body_;
     }
 
-    uint32_t recievedBytesBuffered() const override {
-      return response_encoder_->getStream().recievedBytesBuffered();
+    const Buffer::Instance* streamReceivedBodyBuffer() const override {
+      return response_encoder_->getStream().streamReceivedBodyBuffer();
     }
 
     void traceRequest();

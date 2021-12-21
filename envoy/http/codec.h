@@ -334,7 +334,7 @@ public:
   /**
    * Return the number of bytes this stream has buffered (at the codec level).
    */
-  virtual uint32_t recievedBytesBuffered() const PURE;
+  virtual const Buffer::Instance* streamReceivedBodyBuffer() const PURE;
 
   /**
    * @return string_view optionally return the reason behind codec level errors.

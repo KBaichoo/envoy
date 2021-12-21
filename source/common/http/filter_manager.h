@@ -251,7 +251,7 @@ struct ActiveStreamDecoderFilter : public ActiveStreamFilterBase,
   RequestTrailerMap& addDecodedTrailers() override;
   MetadataMapVector& addDecodedMetadata() override;
   void continueDecoding() override;
-  uint32_t recievedBytesBuffered() const override;
+  const Buffer::Instance* streamReceivedBodyBuffer() const override;
   const Buffer::Instance* decodingBuffer() override;
 
   void modifyDecodingBuffer(std::function<void(Buffer::Instance&)> callback) override;
@@ -583,9 +583,9 @@ public:
   virtual bool enableInternalRedirectsWithBody() const PURE;
 
   /**
-   * Returns the received bytes buffered at the codec.
+   * Returns the received body buffer at the codec.
    */
-  virtual uint32_t recievedBytesBuffered() const PURE;
+  virtual const Buffer::Instance* streamReceivedBodyBuffer() const PURE;
 };
 
 /**

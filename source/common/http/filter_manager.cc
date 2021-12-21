@@ -373,8 +373,8 @@ void ActiveStreamDecoderFilter::injectDecodedDataToFilterChain(Buffer::Instance&
 }
 
 void ActiveStreamDecoderFilter::continueDecoding() { commonContinue(); }
-uint32_t ActiveStreamDecoderFilter::recievedBytesBuffered() const {
-  return parent_.filter_manager_callbacks_.recievedBytesBuffered();
+const Buffer::Instance* ActiveStreamDecoderFilter::streamReceivedBodyBuffer() const {
+  return parent_.filter_manager_callbacks_.streamReceivedBodyBuffer();
 }
 const Buffer::Instance* ActiveStreamDecoderFilter::decodingBuffer() {
   return parent_.buffered_request_data_.get();

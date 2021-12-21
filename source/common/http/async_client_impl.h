@@ -348,9 +348,9 @@ private:
   void injectDecodedDataToFilterChain(Buffer::Instance&, bool) override {}
   const Buffer::Instance* decodingBuffer() override { return buffered_body_.get(); }
   void modifyDecodingBuffer(std::function<void(Buffer::Instance&)>) override {}
-  uint32_t recievedBytesBuffered() const override {
+  const Buffer::Instance* streamReceivedBodyBuffer() const override {
     // TODO(kbaichoo): revisit if should be implemented.
-    return 0;
+    return nullptr;
   }
   void sendLocalReply(Code code, absl::string_view body,
                       std::function<void(ResponseHeaderMap& headers)> modify_headers,

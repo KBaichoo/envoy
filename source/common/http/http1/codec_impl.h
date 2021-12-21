@@ -61,10 +61,11 @@ public:
   void resetStream(StreamResetReason reason) override;
   void readDisable(bool disable) override;
   uint32_t bufferLimit() const override;
-  uint32_t recievedBytesBuffered() const override {
+  const Buffer::Instance* streamReceivedBodyBuffer() const override {
     // TODO(kbaichoo): unimplemented for now in H1.. (since we don't do delayed
     // serialization)
-    return 0;
+    // Could actually return the body buffer for h1.
+    return nullptr;
   }
   absl::string_view responseDetails() override { return details_; }
   const Network::Address::InstanceConstSharedPtr& connectionLocalAddress() override;

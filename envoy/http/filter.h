@@ -342,7 +342,7 @@ public:
    * @return The bytes buffered at the receiving codec. Should be taken into
    * account for retries.
    */
-  virtual uint32_t recievedBytesBuffered() const PURE;
+  virtual const Buffer::Instance* streamReceivedBodyBuffer() const PURE;
 
   /**
    * @return const Buffer::Instance* the currently buffered data as buffered by this filter or
