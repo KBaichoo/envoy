@@ -351,8 +351,6 @@ protected:
     bool pending_receive_buffer_high_watermark_called_ : 1;
     bool pending_send_buffer_high_watermark_called_ : 1;
     bool reset_due_to_messaging_error_ : 1;
-    // Whether in processBufferedData stack...
-    bool processing_buffered_data_ : 1;
     absl::string_view details_;
 
     /**

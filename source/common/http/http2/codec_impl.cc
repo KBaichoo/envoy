@@ -158,8 +158,7 @@ ConnectionImpl::StreamImpl::StreamImpl(ConnectionImpl& parent, uint32_t buffer_l
       local_end_stream_sent_(false), remote_end_stream_(false), data_deferred_(false),
       received_noninformational_headers_(false),
       pending_receive_buffer_high_watermark_called_(false),
-      pending_send_buffer_high_watermark_called_(false), reset_due_to_messaging_error_(false),
-      processing_buffered_data_(false) {
+      pending_send_buffer_high_watermark_called_(false), reset_due_to_messaging_error_(false) {
   parent_.stats_.streams_active_.inc();
   if (buffer_limit > 0) {
     setWriteBufferWatermarks(buffer_limit);
@@ -359,7 +358,6 @@ void ConnectionImpl::StreamImpl::processBufferedData(bool stream_being_destroyed
   // Process all buffered data.
   // TODO(kbaichoo): implement for metadata, endstream...
   // For endstream, can either pass in a data call, or trailer.
-  processing_buffered_data_ = true;
   auto next_stage = stream_manager_.getNextStage();
   stream_manager_.flush_all_data_ = stream_being_destroyed;
   bool continue_processing = stream_being_destroyed || !buffersOverrun();
@@ -387,7 +385,6 @@ void ConnectionImpl::StreamImpl::processBufferedData(bool stream_being_destroyed
     next_stage = stream_manager_.getNextStage();
     continue_processing = stream_being_destroyed || !buffersOverrun();
   }
-  processing_buffered_data_ = false;
 }
 
 void ConnectionImpl::StreamImpl::readDisable(bool disable) {
@@ -513,6 +510,9 @@ void ConnectionImpl::ClientStreamImpl::decodeTrailers() {
     return;
   }
 
+  // Consume any buffered trailers.
+  stream_manager_.trailers_buffered_ = false;
+
   response_decoder_.decodeTrailers(
       std::move(absl::get<ResponseTrailerMapPtr>(headers_or_trailers_)));
 }
@@ -534,6 +534,10 @@ void ConnectionImpl::ServerStreamImpl::decodeTrailers() {
     // TODO(kbaichoo): buffering trailers includes endstream IIRC
     return;
   }
+
+  // Consume any buffered trailers.
+  stream_manager_.trailers_buffered_ = false;
+
   request_decoder_->decodeTrailers(
       std::move(absl::get<RequestTrailerMapPtr>(headers_or_trailers_)));
 }
