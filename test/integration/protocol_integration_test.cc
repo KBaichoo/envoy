@@ -2265,8 +2265,7 @@ name: passthrough-filter
   upstream_request_->encodeHeaders(default_response_headers_, true);
   ASSERT_TRUE(response->waitForEndStream());
   ASSERT_TRUE(response->complete());
-  // TODO(kbaichoo): uncomment, fix internal issues.
-  // EXPECT_EQ(count_ * size_ + added_decoded_data_size_, upstream_request_->bodyLength());
+  EXPECT_EQ(count_ * size_ + added_decoded_data_size_, upstream_request_->bodyLength());
   EXPECT_EQ(true, upstream_request_->complete());
 
   // Sends a request with headers, data, and trailers.

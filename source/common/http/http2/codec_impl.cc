@@ -158,7 +158,8 @@ ConnectionImpl::StreamImpl::StreamImpl(ConnectionImpl& parent, uint32_t buffer_l
       local_end_stream_sent_(false), remote_end_stream_(false), data_deferred_(false),
       received_noninformational_headers_(false),
       pending_receive_buffer_high_watermark_called_(false),
-      pending_send_buffer_high_watermark_called_(false), reset_due_to_messaging_error_(false) {
+      pending_send_buffer_high_watermark_called_(false), reset_due_to_messaging_error_(false),
+      processing_buffered_data_(false) {
   parent_.stats_.streams_active_.inc();
   if (buffer_limit > 0) {
     setWriteBufferWatermarks(buffer_limit);
@@ -166,6 +167,11 @@ ConnectionImpl::StreamImpl::StreamImpl(ConnectionImpl& parent, uint32_t buffer_l
 }
 
 void ConnectionImpl::StreamImpl::destroy() {
+  // Cancel any pending buffered data callback for the stream.
+  if (process_buffered_data_callback_ != nullptr && process_buffered_data_callback_->enabled()) {
+    process_buffered_data_callback_->cancel();
+  }
+
   MultiplexedStreamImplBase::destroy();
   parent_.stats_.streams_active_.dec();
   parent_.stats_.pending_send_bytes_.sub(pending_send_data_->length());
@@ -353,6 +359,7 @@ void ConnectionImpl::StreamImpl::processBufferedData(bool stream_being_destroyed
   // Process all buffered data.
   // TODO(kbaichoo): implement for metadata, endstream...
   // For endstream, can either pass in a data call, or trailer.
+  processing_buffered_data_ = true;
   auto next_stage = stream_manager_.getNextStage();
   stream_manager_.flush_all_data_ = stream_being_destroyed;
   bool continue_processing = stream_being_destroyed || !buffersOverrun();
@@ -380,6 +387,7 @@ void ConnectionImpl::StreamImpl::processBufferedData(bool stream_being_destroyed
     next_stage = stream_manager_.getNextStage();
     continue_processing = stream_being_destroyed || !buffersOverrun();
   }
+  processing_buffered_data_ = false;
 }
 
 void ConnectionImpl::StreamImpl::readDisable(bool disable) {
@@ -392,10 +400,15 @@ void ConnectionImpl::StreamImpl::readDisable(bool disable) {
     ASSERT(read_disable_count_ > 0);
     --read_disable_count_;
     if (!buffersOverrun()) {
+      if (!process_buffered_data_callback_) {
+        process_buffered_data_callback_ =
+            parent_.connection_.dispatcher().createSchedulableCallback(
+                [this]() { processBufferedData(); });
+      }
+      process_buffered_data_callback_->scheduleCallbackCurrentIteration();
       // TODO(kbaichoo): In a future PR, update this to only emit a "small"
       // chunk of data to process.
       // Process all buffered data.
-      processBufferedData();
 
       if (parent_.use_new_codec_wrapper_) {
         parent_.adapter_->MarkDataConsumedForStream(stream_id_, unconsumed_bytes_);
@@ -457,6 +470,9 @@ void ConnectionImpl::StreamImpl::decodeData() {
     std::cerr << "Buffering decodeData() call for stream:" << this << std::endl;
     return;
   }
+
+  // Any buffered data has been consumed.
+  stream_manager_.body_buffered_ = false;
 
   // It's possible that we are waiting to send a deferred reset, so only raise data if local
   // is not complete.
