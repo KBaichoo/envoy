@@ -354,7 +354,7 @@ public:
         // TODO(kbaichoo): will have to also use the release flag for the
         // feature as well -- otherwise we wouldn't be creating this callback.
         // For http2, the first time we re-enable reading we end up creating a
-        // scheduableCallback to process the backed up data.
+        // schedulableCallback to process the backed up data.
         const bool expecting_schedulable_callback_creation =
             http_protocol_ == Protocol::Http2 && state.read_disable_count_ == 0 && !disable &&
             !state.created_schedulable_callback_;

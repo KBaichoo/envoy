@@ -357,7 +357,7 @@ void ConnectionImpl::StreamImpl::encodeMetadata(const MetadataMapVector& metadat
 void ConnectionImpl::StreamImpl::processBufferedData(bool stream_being_destroyed) {
   // Process all buffered data.
   // TODO(kbaichoo): implement for metadata, endstream...
-  // For endstream, can either pass in a data call, or trailer.
+  // For end stream, can either pass in a data call, or trailer.
   auto next_stage = stream_manager_.getNextStage();
   stream_manager_.flush_all_data_ = stream_being_destroyed;
   bool continue_processing = stream_being_destroyed || !buffersOverrun();
@@ -531,7 +531,7 @@ void ConnectionImpl::ServerStreamImpl::decodeTrailers() {
       buffersOverrun() && !stream_manager_.flush_all_data_) {
     stream_manager_.trailers_buffered_ = true;
     std::cerr << "Buffering decodeTrailers() call for stream:" << this << std::endl;
-    // TODO(kbaichoo): buffering trailers includes endstream IIRC
+    // TODO(kbaichoo): buffering trailers includes end stream IIRC
     return;
   }
 
