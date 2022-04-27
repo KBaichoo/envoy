@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <string>
+#include <tuple>
 
 #include "envoy/buffer/buffer.h"
 #include "envoy/http/codec.h"
@@ -71,6 +72,13 @@ public:
       stream_ids.push_back(stream->stream_id_);
     }
     return stream_ids;
+  }
+
+  static Http2SettingsTuple smallWindowHttp2Settings() {
+    return std::make_tuple(CommonUtility::OptionsLimits::DEFAULT_HPACK_TABLE_SIZE,
+                           CommonUtility::OptionsLimits::DEFAULT_MAX_CONCURRENT_STREAMS,
+                           CommonUtility::OptionsLimits::MIN_INITIAL_STREAM_WINDOW_SIZE,
+                           CommonUtility::OptionsLimits::MIN_INITIAL_CONNECTION_WINDOW_SIZE);
   }
 
   struct ClientCodecError : public std::runtime_error {
@@ -3798,6 +3806,185 @@ TEST_P(Http2CodecImplTest, ShouldTrackWhichStreamLeastRecentlyEncodedIfDeferProc
   // The first response should be at the front of the active streams list as it
   // just encoded above.
   EXPECT_THAT(getActiveStreamsIds(*server_), ElementsAre(1, 3));
+}
+
+TEST_P(Http2CodecImplTest, ChunksLargeBodyDuringDeferredProcessing) {
+  server_settings_.emplace(smallWindowHttp2Settings());
+  // We must initialize before dtor, otherwise we'll touch uninitialized
+  // members in dtor.
+  initialize();
+
+  // Test only makes sense if we have defer processing enabled.
+  if (!defer_processing_backedup_streams_) {
+    return;
+  }
+
+  // Start request
+  TestRequestHeaderMapImpl request_headers;
+  HttpTestUtility::addDefaultHeaders(request_headers);
+  EXPECT_CALL(request_decoder_, decodeHeaders_(_, false));
+  EXPECT_TRUE(request_encoder_->encodeHeaders(request_headers, false).ok());
+  driveToCompletion();
+
+  // Check buffer assumptions
+  uint32_t initial_stream_window = getStreamReceiveWindowLimit(server_, 1);
+  ASSERT_EQ(initial_stream_window, 65535);
+  EXPECT_EQ(server_->getStream(1)->bufferLimit(), initial_stream_window);
+
+  // Fill the receive buffer with over a chunk of data.
+  server_->getStream(1)->readDisable(true);
+  Buffer::OwnedImpl body(std::string(initial_stream_window, 'a'));
+  request_encoder_->encodeData(body, false);
+  driveToCompletion();
+
+  // Read enable to grant additional window to the other side.
+  auto* process_buffered_data_callback =
+      new NiceMock<Event::MockSchedulableCallback>(&server_connection_.dispatcher_);
+  server_->getStream(1)->readDisable(false);
+  driveToCompletion();
+
+  // Read disable without the stream having a chance to drain,
+  // allowing us to accumulate more than chunk size in buffer.
+  server_->getStream(1)->readDisable(true);
+  body.add(std::string(10000, 'a'));
+  request_encoder_->encodeData(body, true);
+  driveToCompletion();
+
+  // Process chunk
+  server_->getStream(1)->readDisable(false);
+  {
+    InSequence seq;
+    // Check chunking, should not send the end stream.
+    EXPECT_CALL(request_decoder_, decodeData(_, false))
+        .WillOnce(Invoke([initial_stream_window](Buffer::Instance& buffer, bool) {
+          EXPECT_EQ(buffer.length(), initial_stream_window);
+        }));
+    process_buffered_data_callback->invokeCallback();
+    // Should schedule another call since we still have data to drain.
+    EXPECT_TRUE(process_buffered_data_callback->enabled_);
+
+    EXPECT_CALL(request_decoder_, decodeData(_, true));
+    process_buffered_data_callback->invokeCallback();
+    EXPECT_FALSE(process_buffered_data_callback->enabled_);
+  }
+}
+
+TEST_P(Http2CodecImplTest, ChunkingCanOccurFromFdEvent) {
+  server_settings_.emplace(smallWindowHttp2Settings());
+  // We must initialize before dtor, otherwise we'll touch uninitialized
+  // members in dtor.
+  initialize();
+
+  // Test only makes sense if we have defer processing enabled.
+  if (!defer_processing_backedup_streams_) {
+    return;
+  }
+
+  // Start request
+  TestRequestHeaderMapImpl request_headers;
+  HttpTestUtility::addDefaultHeaders(request_headers);
+  EXPECT_CALL(request_decoder_, decodeHeaders_(_, false));
+  EXPECT_TRUE(request_encoder_->encodeHeaders(request_headers, false).ok());
+  driveToCompletion();
+
+  // Check buffer assumptions
+  uint32_t initial_stream_window = getStreamReceiveWindowLimit(server_, 1);
+  ASSERT_EQ(initial_stream_window, 65535);
+  EXPECT_EQ(server_->getStream(1)->bufferLimit(), initial_stream_window);
+
+  // Fill the receive buffer with over a chunk of data.
+  server_->getStream(1)->readDisable(true);
+  Buffer::OwnedImpl body(std::string(initial_stream_window, 'a'));
+  request_encoder_->encodeData(body, false);
+  driveToCompletion();
+
+  // Read enable to grant additional window to the other side.
+  auto* process_buffered_data_callback =
+      new NiceMock<Event::MockSchedulableCallback>(&server_connection_.dispatcher_);
+  server_->getStream(1)->readDisable(false);
+  driveToCompletion();
+
+  {
+    InSequence seq;
+    body.add(std::string(10000, 'a'));
+    // Check chunking, should not send the end stream.
+    EXPECT_CALL(request_decoder_, decodeData(_, false))
+        .WillOnce(Invoke([initial_stream_window](Buffer::Instance& buffer, bool) {
+          EXPECT_EQ(buffer.length(), initial_stream_window);
+        }));
+    request_encoder_->encodeData(body, true);
+    driveToCompletion();
+
+    EXPECT_CALL(request_decoder_, decodeData(_, true));
+    process_buffered_data_callback->invokeCallback();
+    EXPECT_FALSE(process_buffered_data_callback->enabled_);
+  }
+}
+
+TEST_P(Http2CodecImplTest, ChunkProcessingShouldNotScheduleIfReadDisabled) {
+  server_settings_.emplace(smallWindowHttp2Settings());
+  // We must initialize before dtor, otherwise we'll touch uninitialized
+  // members in dtor.
+  initialize();
+
+  // Test only makes sense if we have defer processing enabled.
+  if (!defer_processing_backedup_streams_) {
+    return;
+  }
+
+  // Start request
+  TestRequestHeaderMapImpl request_headers;
+  HttpTestUtility::addDefaultHeaders(request_headers);
+  EXPECT_CALL(request_decoder_, decodeHeaders_(_, false));
+  EXPECT_TRUE(request_encoder_->encodeHeaders(request_headers, false).ok());
+  driveToCompletion();
+
+  // Check buffer assumptions
+  uint32_t initial_stream_window = getStreamReceiveWindowLimit(server_, 1);
+  ASSERT_EQ(initial_stream_window, 65535);
+  EXPECT_EQ(server_->getStream(1)->bufferLimit(), initial_stream_window);
+
+  // Fill the receive buffer with over a chunk of data.
+  server_->getStream(1)->readDisable(true);
+  Buffer::OwnedImpl body(std::string(initial_stream_window, 'a'));
+  request_encoder_->encodeData(body, false);
+  driveToCompletion();
+
+  // Read enable to grant additional window to the other side.
+  auto* process_buffered_data_callback =
+      new NiceMock<Event::MockSchedulableCallback>(&server_connection_.dispatcher_);
+  server_->getStream(1)->readDisable(false);
+  driveToCompletion();
+
+  // Read disable without the stream having a chance to drain,
+  // allowing us to accumulate more than chunk size in buffer.
+  server_->getStream(1)->readDisable(true);
+  body.add(std::string(10000, 'a'));
+  request_encoder_->encodeData(body, true);
+  driveToCompletion();
+
+  // Process chunk
+  server_->getStream(1)->readDisable(false);
+  {
+    InSequence seq;
+    // Check chunking, should not send the end stream.
+    EXPECT_CALL(request_decoder_, decodeData(_, false))
+        .WillOnce(Invoke([&](Buffer::Instance& buffer, bool) {
+          EXPECT_EQ(buffer.length(), initial_stream_window);
+          server_->getStream(1)->readDisable(true);
+        }));
+    process_buffered_data_callback->invokeCallback();
+
+    // Should not have schedule another call since we read disabled during
+    // decoding the other chunk.
+    EXPECT_FALSE(process_buffered_data_callback->enabled_);
+
+    // Read enable to process final chunk.
+    server_->getStream(1)->readDisable(false);
+    EXPECT_CALL(request_decoder_, decodeData(_, true));
+    process_buffered_data_callback->invokeCallback();
+    EXPECT_FALSE(process_buffered_data_callback->enabled_);
+  }
 }
 
 TEST_P(Http2CodecImplTest, CheckHeaderValueValidation) {
